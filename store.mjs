@@ -40,7 +40,7 @@ export const KINDS = {
   npc: { dir: 'npcs', digits: 7, family: 'Npc', words: ['name', 'func'], min: 1, max: 9999999 },
   equip: { dir: 'equips', digits: 8, family: 'Character', words: ['name', 'desc'], min: 1000000, max: 1999999 },
   item: { dir: 'items', digits: 8, family: 'Item', words: ['name', 'desc'], min: 2000000, max: 5999999 },
-  quest: { dir: 'quests', digits: 5, family: 'Quest', words: [], min: 1, max: 99999 },
+  quest: { dir: 'quests', digits: 5, family: 'Quest', words: [], min: 1, max: 32767 },   // (the game keeps a quest's number in 16 bits)
 };
 /** The files of Quest a quest is spread over; a quest's tree has a part of each name. */
 const QUEST_PARTS = ['QuestInfo', 'Check', 'Act', 'Say'];

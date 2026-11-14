@@ -379,7 +379,7 @@ export function thingsTab(host, kinds, blurb) {
       if (r) { source = r; picture = null; empty = false; from.textContent = `${r.id} ${r.label}`; if (pic) pic.textContent = k === 'quest' ? 'Start empty' : 'From a picture...'; } } }, 'A copy of...');
     const pic = k === 'npc' ? h('button', { type: 'button', onclick: async () => { const p = await pickPicture('npc'); if (p) { picture = p; source = null; pic.textContent = `The picture ${p.name}`; from.textContent = 'A copy of...'; } } }, 'From a picture...')
       : k === 'quest' ? h('button', { type: 'button', onclick: () => { empty = true; source = null; pic.textContent = 'Starting empty'; from.textContent = 'A copy of...'; } }, 'Start empty') : null;
-    const range = k === 'quest' ? 'A quest’s number has up to five digits. Take one the game doesn’t use: you are told if it is taken. A copy of a quest like the one you want is the easiest start: it has everything the game expects of one.'
+    const range = k === 'quest' ? 'A quest’s number goes up to 32767 (the game keeps it in a small number); the game’s own stop at 29933, so 30000 and up are free. You are told if one is taken. A copy of a quest like the one you want is the easiest start: it has everything the game expects of one.'
       : k === 'npc' ? 'An NPC’s number has up to seven digits. Take one the game doesn’t use: you are told if it is taken.'
       : k === 'equip' ? 'An equip’s number has seven digits and starts like the one it copies (a sword 130xxxx, a hat 100xxxx): the first three say what kind of equip it is.'
         : 'An item’s number has seven digits and starts with 2 (use), 3 (set-up), 4 (etc) or 5 (cash); its first three say which of the game’s files it joins.';
@@ -977,7 +977,7 @@ export function thingsTab(host, kinds, blurb) {
     if (ok) setQuestNpc(r.id, ok);
   }
   async function newQuestFor() {
-    const npc = rec.id, id = h('input', { type: 'number', min: 1, max: 99999, required: true }), name = h('input', { type: 'text', value: 'A new quest', maxLength: 100 }), note = h('p', { class: 'error', role: 'alert' });
+    const npc = rec.id, id = h('input', { type: 'number', min: 1, max: 32767, required: true }), name = h('input', { type: 'text', value: 'A new quest', maxLength: 100 }), note = h('p', { class: 'error', role: 'alert' });
     const made = await dialog('A new quest for it', (close) => h('form', { class: 'form', onsubmit: async (e) => {
       e.preventDefault();
       const n = Number(id.value);
@@ -986,7 +986,7 @@ export function thingsTab(host, kinds, blurb) {
         if (s2.assets || s2.draft || s2.live) { note.textContent = `Quest ${n} is there already. Take a free number, or attach that one.`; return; }
         close(n);
       } catch (err) { note.textContent = err.message; }
-    } }, h('label', null, 'Its number', id), h('label', null, 'Its name', name), h('p', { class: 'muted' }, 'Up to five digits, one the game doesn’t use. It starts and ends with this NPC; the rest of it is made on the Quests tab.'), note,
+    } }, h('label', null, 'Its number', id), h('label', null, 'Its name', name), h('p', { class: 'muted' }, 'Up to 32767, one the game doesn’t use (30000 and up are free). It starts and ends with this NPC; the rest of it is made on the Quests tab.'), note,
     h('div', { class: 'dialog-foot' }, h('button', { type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'primary', type: 'submit' }, 'Make it'))));
     if (!made) return;
     const tree = EMPTY_QUEST();

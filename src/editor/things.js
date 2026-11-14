@@ -90,6 +90,72 @@ function ownFrames(t, pose, depth = 0) {
   }
   return depth < 4 ? out : {};
 }
+
+/*
+ * An equip's shared looks. A cap keeps its pictures once, in looks of their own: default (seen from the front) and
+ * backDefault (from behind, on a ladder or a rope), each holding its layers (default, defaultAc...: a picture each,
+ * drawn at its own depth, joined to the character by its point). Its poses' frames only link to them, part by part
+ * (../../default/default), so it looks the same in every pose.
+ */
+const LOOK_NAMES = { default: 'front look', backDefault: 'back look' };
+/** Whether a key of an equip holds a look (its pictures as they are) rather than a pose (numbered frames). */
+const isLook = (t, k) => k !== 'info' && isObj(t[k]) && (k in LOOK_NAMES || Object.values(t[k]).some(isCanvas));
+const looksOf = (t) => posesOf(t).filter((k) => isLook(t, k));
+const framePosesOf = (t) => posesOf(t).filter((k) => !isLook(t, k));
+const lookName = (k) => LOOK_NAMES[k] || `look ${k}`;
+/** A look's layers: its pictures, by name. */
+const layersOf = (t, look) => Object.entries(t[look] || {}).filter(([, v]) => isCanvas(v));
+const partLink = (look, part) => ({ _uol: `../../${look}/${part}` });
+/** The look all of a pose's frames link to (every part ../../<look>/<part>), or null. */
+function lookUse(t, pose) {
+  const fs = numKeys(t[pose]);
+  if (!fs.length) return null;
+  let look = null;
+  for (const f of fs) {
+    const fr = t[pose][f];
+    if (!isObj(fr) || typeof fr._uol === 'string') return null;
+    const parts = Object.values(fr).filter(isObj);
+    if (!parts.length) return null;
+    for (const v of parts) {
+      const m = /^\.\.\/\.\.\/([^/]+)\/[^/]+$/.exec(v._uol || '');
+      if (!m || !isLook(t, m[1]) || (look && look !== m[1])) return null;
+      look = m[1];
+    }
+  }
+  return look;
+}
+/** A pose's frame as it is drawn, and the nodes down to it (a frame that is "the same as" another pose's is put through). */
+function frameAt(t, pose, f) {
+  let fr = t[pose]?.[f], chain = [t, t[pose]];
+  for (let i = 0; i < 4 && typeof fr?._uol === 'string'; i++) {
+    const m = /^\.\.\/([^/]+)\/(\d+)$/.exec(fr._uol);
+    if (!m) return { fr: null, chain };
+    chain = [t, t[m[1]]]; fr = t[m[1]]?.[m[2]];
+  }
+  return { fr: isObj(fr) ? fr : null, chain: [...chain, fr] };
+}
+/** A frame's part as it is drawn: the picture itself, or the one its link leads to ({ c, from }: from names the look). */
+function partAt(chain, v) {
+  if (isCanvas(v)) return { c: v, from: null };
+  if (typeof v?._uol !== 'string') return { c: null, from: null };
+  const c = follow(chain, v._uol), m = /^\.\.\/\.\.\/([^/]+)\/([^/]+)$/.exec(v._uol);
+  return { c: isCanvas(c) ? c : null, from: m ? `${m[1]}/${m[2]}` : v._uol };
+}
+/** A pose's frames each a copy with every link put through, parts too (for a pose that stops using a look). */
+function ownFramesDeep(t, pose) {
+  const out = {};
+  for (const f of numKeys(t[pose])) {
+    const { fr, chain } = frameAt(t, pose, f);
+    if (!fr) continue;
+    out[f] = Object.fromEntries(Object.entries(fr).map(([k, v]) => [k, isObj(v) && typeof v._uol === 'string' ? structuredClone(partAt(chain, v).c ?? v) : structuredClone(v)]));
+  }
+  return out;
+}
+/** Makes a pose use a look: `count` frames (its own number of them, or 1), each linking to every layer of the look. */
+function useLook(t, pose, look, count) {
+  const parts = layersOf(t, look).map(([k]) => k), n = count || Math.max(1, numKeys(t[pose]).length);
+  t[pose] = Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i), Object.fromEntries(parts.map((p) => [p, partLink(look, p)]))]));
+}
 /** A picture's address on the page. */
 const src = (kind, c) => `/assets/${FAMILY[kind]}/${c._canvas}`;
 /** The layers a part may be drawn in (Base/zmap.img), asked for once. */
@@ -347,13 +413,20 @@ export function thingsTab(host, kinds, blurb) {
   }
 
   // ---------------------------------------------------------------- the boards
-  const thumbs = (frames, kind2, max = 6) => {
+  /** A pose's first frames, small (following links: a frame the same as another's, a part from a look). */
+  const thumbs = (t, pose, kind2, max = 6) => {
     const pics = [];
-    for (const f of numKeys(frames).slice(0, max)) {
-      const fr = frames[f], c = isCanvas(fr) ? fr : isObj(fr) ? Object.values(fr).find(isCanvas) : null;
+    for (const f of numKeys(t[pose]).slice(0, max)) {
+      const { fr, chain } = frameAt(t, pose, f);
+      const c = isCanvas(fr) ? fr : fr ? Object.values(fr).map((v) => partAt(chain, v).c).find(Boolean) : null;
       if (c) pics.push(h('img', { alt: '', loading: 'lazy', src: src(kind2, c) }));
     }
     return h('div', { class: 'nb-thumbs' }, pics.length ? pics : h('span', { class: 'muted' }, 'no pictures'));
+  };
+  /** A look's layers, small, each with its depth. */
+  const layerThumbs = (t, look) => {
+    const ls = layersOf(t, look);
+    return h('div', { class: 'nb-thumbs' }, ls.length ? ls.map(([name, c]) => h('img', { alt: '', loading: 'lazy', title: `${name} (${c.z ?? 'no layer'})`, src: src(rec.kind, c) })) : h('span', { class: 'muted' }, 'no pictures'));
   };
   /** Equips and items: the thing, its stats, its icon, and an equip's worn look and poses; an item's effect. */
   function thingSpec() {
@@ -365,9 +438,13 @@ export function thingsTab(host, kinds, blurb) {
       stats: { label: 'Stats', color: '#7a5af5', ins: [{ name: 'in', accepts: ['stats'] }], body: () => { const s = Object.entries(t.info).filter(([, v]) => typeof v === 'number' && v).slice(0, 5); return s.length ? h('div', { class: 'nb-facts' }, s.map(([k, v]) => h('span', null, `${k} ${v}`))) : h('span', { class: 'muted' }, 'none'); } },
       icon: { label: 'Icon', color: '#d97706', ins: [{ name: 'in', accepts: ['icon'] }], body: () => (isCanvas(t.info.icon) ? h('img', { alt: '', class: 'nb-icon', src: src(rec.kind, t.info.icon) }) : h('span', { class: 'muted' }, 'none')) },
       spec: { label: 'When used', color: '#16a34a', ins: [{ name: 'in', accepts: ['spec'] }], deletable: true, body: () => { const s = Object.entries(t.spec || {}).filter(([, v]) => typeof v !== 'object').slice(0, 5); return s.length ? h('div', { class: 'nb-facts' }, s.map(([k, v]) => h('span', null, `${k} ${v}`))) : h('span', { class: 'muted' }, 'does nothing yet'); } },
-      look: { label: 'Worn look', color: '#0891b2', ins: [{ name: 'in', accepts: ['look'] }], outs: () => [{ name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', { class: 'muted' }, `${posesOf(t).length} poses`) },
+      look: { label: 'Worn look', color: '#0891b2', ins: [{ name: 'in', accepts: ['look'] }],
+        outs: () => [...(looksOf(t).length ? [{ name: 'looks', label: 'looks', kind: 'shared' }] : []), { name: 'poses', label: 'poses', kind: 'pose' }],
+        body: () => { const ls = looksOf(t), ps = framePosesOf(t), using = ps.filter((p) => lookUse(t, p)).length; return h('span', { class: 'muted' }, `${ps.length} poses${ls.length ? `, ${using} of them wearing ${ls.length === 1 ? 'its look' : 'one of its looks'}` : ''}`); } },
+      shared: { label: 'Look', color: '#0891b2', ins: [{ name: 'in', accepts: ['shared'] }],
+        body: (n) => { const users = framePosesOf(t).filter((p) => lookUse(t, p) === n.data.look); return [layerThumbs(t, n.data.look), h('span', { class: 'muted' }, `${layersOf(t, n.data.look).length} layer${layersOf(t, n.data.look).length === 1 ? '' : 's'}; worn in ${users.length} pose${users.length === 1 ? '' : 's'}`), users.length ? h('div', { class: 'nb-chips' }, users.slice(0, 12).map((p) => h('span', { class: 'nb-chip' }, p)), users.length > 12 ? h('span', { class: 'muted' }, `+${users.length - 12}`) : null) : null]; } },
       pose: { label: 'Pose', color: '#0e7490', deletable: true, ins: [{ name: 'in', accepts: ['pose'] }, { name: 'same', label: 'same as', accepts: ['frames'] }], outs: () => [{ name: 'frames', label: 'its frames', kind: 'frames' }],
-        body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t[n.data.pose], rec.kind, 5); } },
+        body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t, n.data.pose, rec.kind, 5); } },
     };
     function build() {
       const nodes = [{ id: 'thing', type: 'thing', title: String(rec.id) }, { id: 'stats', type: 'stats' }, { id: 'icon', type: 'icon' }];
@@ -375,11 +452,18 @@ export function thingsTab(host, kinds, blurb) {
       if (equip) {
         nodes.push({ id: 'look', type: 'look' });
         wires.push({ from: ['thing', 'look'], to: ['look', 'in'], fixed: true });
-        for (const p of posesOf(t)) {
+        // its looks (a cap's front and back), each with the poses that wear it shown in it; a pose of its own frames
+        // (or the same as another's) is a node of its own
+        for (const l of looksOf(t)) {
+          nodes.push({ id: `shared:${l}`, type: 'shared', title: `${lookName(l)}  (${l})`, data: { look: l } });
+          wires.push({ from: ['look', 'looks'], to: [`shared:${l}`, 'in'], fixed: true });
+        }
+        const own = framePosesOf(t).filter((p) => !lookUse(t, p));
+        for (const p of own) {
           nodes.push({ id: `pose:${p}`, type: 'pose', title: `${p}${POSES[p] ? `  ${POSES[p]}` : ''}`, data: { pose: p } });
           wires.push({ from: ['look', 'poses'], to: [`pose:${p}`, 'in'], fixed: true });
         }
-        for (const p of posesOf(t)) { const to = linkOf(t, p); if (to && t[to]) wires.push({ from: [`pose:${to}`, 'frames'], to: [`pose:${p}`, 'same'] }); }
+        for (const p of own) { const to = linkOf(t, p); if (to && t[to] && own.includes(to)) wires.push({ from: [`pose:${to}`, 'frames'], to: [`pose:${p}`, 'same'] }); }
       } else if (isObj(t.spec)) { nodes.push({ id: 'spec', type: 'spec' }); wires.push({ from: ['thing', 'spec'], to: ['spec', 'in'], fixed: true }); }
       return { nodes, wires };
     }
@@ -408,10 +492,12 @@ export function thingsTab(host, kinds, blurb) {
       async add(type) {
         if (type === 'spec') { t.spec = {}; return 'spec'; }
         const choose = h('select', null, Object.keys(POSES).filter((p) => !t[p]).map((p) => h('option', { value: p }, `${p}  ${POSES[p]}`)));
+        const front = looksOf(t).includes('default') ? 'default' : looksOf(t)[0];
         const p = await dialog('Which pose?', (close) => h('form', { class: 'form', onsubmit: (e) => { e.preventDefault(); close(choose.value); } },
-          h('label', null, 'Pose', choose), h('p', { class: 'muted' }, t.stand1 ? 'It starts as the same as stand1: cut that wire to give it frames of its own.' : 'It starts with one empty frame.'),
+          h('label', null, 'Pose', choose), h('p', { class: 'muted' }, front ? `It starts wearing the ${lookName(front)}, as the rest do.` : t.stand1 ? 'It starts as the same as stand1: cut that wire to give it frames of its own.' : 'It starts with one empty frame.'),
           h('div', { class: 'dialog-foot' }, h('button', { class: 'primary', type: 'submit' }, 'Add it'))));
         if (!p) return null;
+        if (front) { useLook(t, p, front, numKeys(t.stand1).length || 1); return `shared:${front}`; }
         if (t.stand1 && numKeys(t.stand1).length) sameAs(p, 'stand1'); else t[p] = { 0: {} };
         return `pose:${p}`;
       },
@@ -422,36 +508,92 @@ export function thingsTab(host, kinds, blurb) {
         if (id === 'icon') return [h('h3', null, 'Icon'), pictureRow(t.info, 'icon', 'icon', (p) => [0, p.h]), pictureRow(t.info, 'iconRaw', 'iconRaw', (p) => [0, p.h]),
           h('p', { class: 'muted' }, 'The game keeps two of every icon, icon and iconRaw; give both the same picture unless you have two. An icon is 32 by 32 or a little less.')];
         if (id === 'spec') return [h('h3', null, 'What using it does (spec)'), fields(t.spec, MORE.spec)];
-        if (id === 'look') return [h('h3', null, 'Worn look'), preview?.el, h('p', { class: 'muted' }, 'Each pose is a node: add one from Add, wire a pose’s frames into another’s “same as” to share them, and pick one to change its frames.')];
+        if (id === 'look') return [h('h3', null, 'Worn look'), preview?.el, looksOf(t).length
+          ? h('p', { class: 'muted' }, 'Its pictures are kept in its looks (a cap’s front look and back look), each a picture or a few in layers; its poses wear them. Pick a look to change its layers and which poses wear it. A pose given frames of its own is a node of its own.')
+          : h('p', { class: 'muted' }, 'Each pose is a node: add one from Add, wire a pose’s frames into another’s “same as” to share them, and pick one to change its frames.')];
+        if (id.startsWith('shared:')) return lookInspector(id.slice(7));
         return poseInspector(id.slice(5));
       },
       selectedPose: () => (picked?.startsWith('pose:') ? picked.slice(5) : null),
     };
   }
-  /** An equip's pose: its frames, each with its parts. */
+  /** The layer names the character has (Base/zmap.img), for a part's layer box to offer. */
+  const zList = () => { const zs = h('datalist', { id: `z-${rec.id}-${Math.random().toString(36).slice(2, 8)}` }); zLayers().then((list2) => fill(zs, list2.map((z) => h('option', { value: z })))); return zs; };
+  /** One part (a picture in a frame, or a layer of a look): its picture and point, its layer, the points it is joined by. */
+  function partEditor(holder, name, c, zs, remove = null) {
+    return h('div', { class: 'part' }, pictureRow(holder, name, name, (pic) => [Math.round(pic.w / 2), Math.round(pic.h / 2)]),
+      h('label', { class: 'field' }, h('span', null, 'layer'), h('input', { type: 'text', list: zs.id, value: c.z ?? '', title: 'Which layer of the character it is drawn in (Base/zmap.img): what it is drawn over and under.', onchange: (e) => { c.z = e.target.value; touch(); } })),
+      Object.entries(c.map || {}).map(([pt, xy]) => h('div', { class: 'pic-point' }, h('span', { class: 'mini' }, pt), ['x', 'y'].map((axis, i) => h('label', { class: 'mini' }, axis, h('input', { type: 'number', value: xy?.[i] ?? 0, onchange: (e) => { c.map[pt] = [...(c.map[pt] || [0, 0])]; c.map[pt][i] = Number(e.target.value) || 0; touch(); } }))),
+        h('button', { type: 'button', class: 'quiet', 'aria-label': `Take ${pt} off`, onclick: () => { delete c.map[pt]; touch(); side(); } }, '×'))),
+      h('select', { class: 'adder', 'aria-label': 'Join it by another point', onchange: (e) => { if (!e.target.value) return; c.map ??= {}; c.map[e.target.value] = [0, 0]; touch(); side(); } },
+        h('option', { value: '' }, 'Join it by a point...'), POINTS.filter((pt) => !c.map?.[pt]).map((pt) => h('option', { value: pt }, pt))),
+      remove ? h('button', { type: 'button', class: 'quiet danger', onclick: remove }, `Take ${name} off`) : null);
+  }
+  /** Where a link of a part leads, in words: "the front look's default". */
+  const fromWords = (from) => { const [k, part] = String(from).split('/'); return part !== undefined ? `the ${lookName(k)}’s ${part}` : from; };
+
+  /** An equip's look (a cap's front or back look): its layers, and the poses that wear it. */
+  function lookInspector(l) {
+    const t = rec.tree;
+    if (!t[l]) return [];
+    const zs = zList(), wearers = framePosesOf(t).filter((p) => lookUse(t, p) === l), others = looksOf(t).filter((x) => x !== l), own = framePosesOf(t).filter((p) => !lookUse(t, p));
+    const out = [h('h3', null, `${lookName(l)} (${l})`), preview?.el,
+      h('p', { class: 'muted' }, l === 'backDefault' ? 'How it looks from behind, worn on a ladder or a rope.' : 'How it looks, in every pose that wears it.'),
+      h('h4', null, `Its layers (${layersOf(t, l).length})`)];
+    for (const [name, c] of layersOf(t, l)) out.push(h('div', { class: 'frame-card' }, partEditor(t[l], name, c, zs, layersOf(t, l).length > 1 ? () => removeLayer(l, name) : null)));
+    out.push(h('form', { class: 'adder-row', onsubmit: async (e) => {
+      e.preventDefault();
+      const name = e.target.elements.layer.value.trim();
+      if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || t[l][name]) { e.target.elements.layer.focus(); return; }
+      const pic = await pickPicture(rec.kind);
+      if (!pic) return;
+      const first = layersOf(t, l)[0]?.[1];
+      t[l][name] = { ...canvasOf(rec.kind, pic, [Math.round(pic.w / 2), Math.round(pic.h / 2)]), map: structuredClone(first?.map || { brow: [0, 0] }), z: first?.z ?? 'capOverHair' };
+      for (const p of wearers) for (const f of numKeys(t[p])) t[p][f][name] = partLink(l, name);   // (every pose that wears the look wears it too)
+      touch(); showBoard(); side();
+    } }, h('input', { type: 'text', name: 'layer', placeholder: 'a new layer’s name (defaultAc...)' }), h('button', { type: 'submit' }, 'Add a layer')), zs);
+    out.push(h('h4', null, `Worn in ${wearers.length} pose${wearers.length === 1 ? '' : 's'}`),
+      wearers.length ? h('div', { class: 'wearers' }, wearers.map((p) => h('div', { class: 'wearer' }, h('span', null, p, POSES[p] ? h('span', { class: 'muted' }, `  ${POSES[p]}`) : null),
+        others.map((o) => h('button', { type: 'button', class: 'quiet', title: `It wears the ${lookName(o)} instead`, onclick: () => { useLook(t, p, o); touch(); showBoard(); side(); } }, `Wear the ${lookName(o)}`)),
+        h('button', { type: 'button', class: 'quiet', title: 'Its frames become copies of their own, to change for this pose', onclick: () => { t[p] = ownFramesDeep(t, p); picked = `pose:${p}`; touch(); showBoard(); side(); } }, 'Own frames')))) : h('p', { class: 'muted' }, 'No pose wears it.'),
+      own.length ? h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, `Poses with frames of their own (${own.length})`)),
+        own.map((p) => h('div', { class: 'wearer' }, h('span', null, p), h('button', { type: 'button', class: 'quiet', onclick: () => { if (!confirm(`${p} drops its own frames and wears the ${lookName(l)}. Go on?`)) return; useLook(t, p, l); touch(); showBoard(); side(); } }, `Wear the ${lookName(l)}`)))) : null,
+      h('p', { class: 'muted' }, 'A layer is drawn at its depth: capOverHair over the hair, cap under it, capBelowAccessory under face and eye accessories, backCap from behind... A cap is joined to the head by its brow point.'));
+    return out;
+  }
+  function removeLayer(l, name) {
+    const t = rec.tree;
+    if (!confirm(`Take the layer ${name} off the ${lookName(l)}? The poses that wear it lose it too.`)) return;
+    delete t[l][name];
+    for (const p of framePosesOf(t)) for (const f of numKeys(t[p])) { const fr = t[p][f]; if (fr?.[name]?._uol === `../../${l}/${name}`) delete fr[name]; }
+    touch(); showBoard(); side();
+  }
+
+  /** An equip's pose: its frames, each with its parts (a part may be a link to one of its looks' layers). */
   function poseInspector(p) {
     const t = rec.tree, frames = t[p];
     if (!frames) return [];
-    const to = linkOf(t, p);
+    const to = linkOf(t, p), looks = looksOf(t);
     const out = [h('h3', null, `${p}${POSES[p] ? `  (${POSES[p]})` : ''}`), preview?.el];
     if (to) return [...out, h('p', null, `It is the same as ${to}: it has ${to}’s frames.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
-    const zs = h('datalist', { id: `z-${rec.id}` });
-    zLayers().then((list2) => fill(zs, list2.map((z) => h('option', { value: z }))));
+    if (looks.length) out.push(h('div', { class: 'side-buttons' }, looks.map((l) => h('button', { type: 'button', title: 'Its own frames are dropped', onclick: () => { if (!confirm(`${p} drops its own frames and wears the ${lookName(l)}. Go on?`)) return; useLook(t, p, l); picked = `shared:${l}`; touch(); showBoard(); side(); } }, `Wear the ${lookName(l)} instead`))));
+    const zs = zList();
     numKeys(frames).forEach((f) => {
       const fr = frames[f];
       if (!isObj(fr)) return;
       if (typeof fr._uol === 'string') { out.push(h('div', { class: 'frame-card' }, h('strong', null, `Frame ${f}`), h('span', { class: 'muted' }, ` the same as ${fr._uol.replace(/^\.\.\//, '')}`))); return; }
-      const parts = Object.entries(fr).filter(([, v]) => isCanvas(v));
+      const parts = Object.entries(fr).filter(([, v]) => isObj(v));
       out.push(h('div', { class: 'frame-card' }, h('div', { class: 'frame-head' }, h('strong', null, `Frame ${f}`),
         h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(fr); touch(); side(); } }, 'Copy it'),
         h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least: take the pose off instead.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')),
-      parts.map(([name, c]) => h('div', { class: 'part' }, pictureRow(fr, name, name, (pic) => [Math.round(pic.w / 2), Math.round(pic.h / 2)]),
-        h('label', { class: 'field' }, h('span', null, 'layer'), h('input', { type: 'text', list: zs.id, value: c.z ?? '', title: 'Which layer of the character it is drawn in (Base/zmap.img).', onchange: (e) => { c.z = e.target.value; touch(); } })),
-        Object.entries(c.map || {}).map(([pt, xy]) => h('div', { class: 'pic-point' }, h('span', { class: 'mini' }, pt), ['x', 'y'].map((axis, i) => h('label', { class: 'mini' }, axis, h('input', { type: 'number', value: xy?.[i] ?? 0, onchange: (e) => { c.map[pt] = [...(c.map[pt] || [0, 0])]; c.map[pt][i] = Number(e.target.value) || 0; touch(); } }))),
-          h('button', { type: 'button', class: 'quiet', 'aria-label': `Take ${pt} off`, onclick: () => { delete c.map[pt]; touch(); side(); } }, '×'))),
-        h('select', { class: 'adder', 'aria-label': 'Join it by another point', onchange: (e) => { if (!e.target.value) return; c.map ??= {}; c.map[e.target.value] = [0, 0]; touch(); side(); } },
-          h('option', { value: '' }, 'Join it by a point...'), POINTS.filter((pt) => !c.map?.[pt]).map((pt) => h('option', { value: pt }, pt))),
-        h('button', { type: 'button', class: 'quiet danger', onclick: () => { delete fr[name]; touch(); side(); } }, `Take ${name} off`))),
+      parts.map(([name, v]) => {
+        if (isCanvas(v)) return partEditor(fr, name, v, zs, () => { delete fr[name]; touch(); side(); });
+        const { c, from } = partAt([t, frames, fr], v);
+        return h('div', { class: 'part' }, h('div', { class: 'pic-row' }, h('div', { class: 'pic-frame small' }, c ? h('img', { alt: '', src: src(rec.kind, c) }) : h('span', { class: 'muted' }, 'none')),
+          h('div', { class: 'pic-what' }, h('strong', null, name), h('span', { class: 'muted' }, `from ${fromWords(from)}`), c ? h('span', { class: 'muted' }, `${c._w} × ${c._h}, layer ${c.z ?? '-'}`) : null)),
+        h('div', { class: 'side-buttons' }, h('button', { type: 'button', disabled: !c, title: 'A copy of it, for this frame alone, to change', onclick: () => { fr[name] = structuredClone(c); touch(); side(); } }, 'Give it its own picture'),
+          h('button', { type: 'button', class: 'quiet danger', onclick: () => { delete fr[name]; touch(); side(); } }, `Take ${name} off`)));
+      }),
       h('form', { class: 'adder-row', onsubmit: async (e) => {
         e.preventDefault();
         const name = e.target.elements.part.value.trim();
@@ -463,7 +605,7 @@ export function thingsTab(host, kinds, blurb) {
       } }, h('input', { type: 'text', name: 'part', placeholder: 'a part’s name (mail, weapon...)' }), h('button', { type: 'submit' }, 'Add a part'))));
     });
     out.push(zs, h('button', { type: 'button', onclick: () => { const last = numKeys(frames).pop(); frames[nextKey(frames)] = last ? structuredClone(frames[last]) : {}; touch(); side(); } }, 'Add a frame'),
-      h('p', { class: 'muted' }, 'A part’s point (x, y) is where it is held in its picture; each “join” point is put on the same point of the character (the body’s navel, the hand...). The layer says what it is drawn over and under.'));
+      h('p', { class: 'muted' }, 'A part’s point (x, y) is where it is held in its picture; each “join” point is put on the same point of the character (the body’s navel, the hand, the brow...). The layer says what it is drawn over and under.'));
     return out;
   }
   /** Numbers a pose's frames 0, 1, 2... again after one is taken out. */
@@ -481,7 +623,7 @@ export function thingsTab(host, kinds, blurb) {
       npc: { label: 'NPC', color: '#2a78d6', outs: () => [{ name: 'info', label: 'settings', kind: 'info' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
       info: { label: 'Settings', color: '#7a5af5', ins: [{ name: 'in', accepts: ['info'] }], body: () => h('span', { class: 'muted' }, `${Object.keys(t.info).filter((k) => !k.startsWith('_')).length} settings`) },
       pose: { label: 'Pose', color: '#0e7490', deletable: true, ins: [{ name: 'in', accepts: ['pose'] }, { name: 'same', label: 'same as', accepts: ['frames'] }], outs: () => [{ name: 'frames', label: 'its frames', kind: 'frames' }],
-        body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t[n.data.pose], 'npc', 5); } },
+        body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t, n.data.pose, 'npc', 5); } },
     };
     const build = () => {
       const nodes = [{ id: 'npc', type: 'npc', title: String(rec.id) }, { id: 'info', type: 'info' }], wires = [{ from: ['npc', 'info'], to: ['info', 'in'], fixed: true }];

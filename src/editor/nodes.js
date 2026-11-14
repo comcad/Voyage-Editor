@@ -70,7 +70,19 @@ export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, on
     for (const n of graph.nodes) { const e = nodeEl(n); els.set(n.id, e); world.append(e); }
     place();
     // (the first time: as much as fits at a size that can be read, from the top left; Fit shows it all)
-    requestAnimationFrame(() => { if (!fitted && graph.nodes.length) { fitted = true; fit(0.75); } else drawWires(); });
+    requestAnimationFrame(() => { unstack(); if (!fitted && graph.nodes.length) { fitted = true; fit(0.75); } else drawWires(); });
+  }
+  /** Nodes in one column that would lie over each other (a tall one above another) are moved apart, down. */
+  function unstack() {
+    const cols = new Map();
+    for (const n of graph.nodes) { if (!cols.has(n.x)) cols.set(n.x, []); cols.get(n.x).push(n); }
+    for (const col of cols.values()) {
+      col.sort((a, b) => a.y - b.y);
+      for (let i = 1; i < col.length; i++) {
+        const above = col[i - 1], low = above.y + (els.get(above.id)?.offsetHeight || 0) + 16;
+        if (col[i].y < low) { col[i].y = low; const e = els.get(col[i].id); if (e) e.style.top = `${low}px`; }
+      }
+    }
   }
   /** Draws one node again (its title or what it shows changed), leaving the rest. */
   function redraw(id) {

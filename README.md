@@ -18,6 +18,8 @@ Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 [![Last commit](https://img.shields.io/github/last-commit/comcad/Voyage-Editor?style=flat-square)](https://github.com/comcad/Voyage-Editor/commits/main)
 
 </div>
+<img width="2872" height="1448" alt="image" src="https://github.com/user-attachments/assets/312d9637-7013-4e0e-bcae-717a81a58c8d" />
+
 
 <br />
 

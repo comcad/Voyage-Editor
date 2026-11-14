@@ -1,11 +1,13 @@
 /**
- * Pictures changed in the editor, live: painted on pixel by pixel, turned, flipped and moved.
+ * Pictures changed in the editor, live: painted on pixel by pixel, made bigger or smaller, turned, flipped and moved.
  *
- * A picture being changed is an edit: the picture as it was (its pixels, its point and the points it is joined to the
- * character by) and what has been done to it (turned so many degrees, flipped, moved so many pixels). What it looks
+ * A picture being changed is an edit: the picture as it was (its pixels, its point, the points it is joined to the
+ * character by, and a monster's body box and head) and what has been done to it (sized, turned so many degrees,
+ * flipped, moved so many pixels). What it looks
  * like now is made from those, so turning it again starts from the picture as it was rather than from a turned copy
- * that has lost its corners. It turns about the point it is joined by (a weapon about the hand, a cap about the brow),
- * or about its own point when it has none (an NPC about its feet), so that point stays where it is. Pixels are moved
+ * that has lost its corners. It is sized and turned about the point it is joined by (a weapon about the hand, a cap
+ * about the brow), or about its own point when it has none (an NPC or a monster about its feet), so that point stays
+ * where it is: a monster made bigger grows up from the ground. Pixels are moved
  * whole (no smoothing), as the game's pictures are drawn.
  *
  * Nothing here is sent anywhere: the page shows an edit as it goes, and Save turns it into a picture of yours.
@@ -29,29 +31,55 @@ export async function loadCanvas(url) {
  */
 export async function startEdit(node, url, saved = null) {
   const pixels = await loadCanvas(saved ? saved.url : url);
+  const vec = (v) => (Array.isArray(v) && v.length >= 2 ? [Number(v[0]) || 0, Number(v[1]) || 0] : null);
+  const box = saved ? saved.box ?? null : vec(node.lt) && vec(node.rb) ? { lt: vec(node.lt), rb: vec(node.rb) } : null;
+  const START = { scale: 1, angle: 0, flipX: false, flipY: false, dx: 0, dy: 0 };
   return {
     node, pixels, painted: false, live: null, v: 0,
-    base: { canvas: saved ? saved.from : node._canvas, origin: [...(saved?.origin || node.origin || [0, 0])], map: structuredClone(saved ? saved.map ?? null : node.map ?? null) },
-    e: { angle: 0, flipX: false, flipY: false, dx: 0, dy: 0, ...(saved?.e || {}) },
-    e0: { angle: 0, flipX: false, flipY: false, dx: 0, dy: 0, ...(saved?.e || {}) },
+    base: { canvas: saved ? saved.from : node._canvas, origin: [...(saved?.origin || node.origin || [0, 0])], map: structuredClone(saved ? saved.map ?? null : node.map ?? null),
+      box: structuredClone(box), head: saved ? saved.head ?? null : vec(node.head) },
+    e: { ...START, ...(saved?.e || {}) },
+    e0: { ...START, ...(saved?.e || {}) },
   };
 }
-/** Whether an edit has changed its picture since it was started (painted, or turned, flipped or moved more). */
-export const touched = (ed) => !!ed && (ed.painted || ['angle', 'flipX', 'flipY', 'dx', 'dy'].some((k) => ed.e[k] !== ed.e0[k]));
-/** Whether an edit turns or flips its picture (so its pixels are not the picture's as they were). */
-export const turns = (e) => ((e.angle % 360) + 360) % 360 !== 0 || e.flipX || e.flipY;
+/** Whether an edit has changed its picture since it was started (painted, or sized, turned, flipped or moved more). */
+export const touched = (ed) => !!ed && (ed.painted || ['scale', 'angle', 'flipX', 'flipY', 'dx', 'dy'].some((k) => (ed.e[k] ?? (k === 'scale' ? 1 : 0)) !== (ed.e0[k] ?? (k === 'scale' ? 1 : 0))));
+/** Whether an edit sizes, turns or flips its picture (so its pixels are not the picture's as they were). */
+export const turns = (e) => ((e.angle % 360) + 360) % 360 !== 0 || e.flipX || e.flipY || (e.scale ?? 1) !== 1;
 /** Works out what an edit looks like now (edit.live), after anything about it changes. */
 export function remake(edit) { edit.live = made(edit.pixels, edit.base, edit.e); edit.v++; return edit.live; }
 
-/** What pixels (a canvas) with a point and join points (base) look like turned, flipped and moved (e): { canvas, w, h, origin, map }. */
+/**
+ * What pixels (a canvas) with a point, join points and a body box (base) look like sized, turned, flipped and moved
+ * (e): { canvas, w, h, origin, map, box, head }. The box and the head move with the picture.
+ */
 export function made(pixels, base, e) {
   const w = pixels.width, h = pixels.height, o = base.origin || [0, 0], map = base.map && Object.keys(base.map).length ? base.map : null;
   const join = map ? Object.keys(map)[0] : null, pv = join ? [o[0] + map[join][0], o[1] + map[join][1]] : [o[0], o[1]];
-  if (!turns(e)) return { canvas: pixels, w, h, origin: [o[0] - e.dx, o[1] - e.dy], map: map && structuredClone(map) };
+  const dx = e.dx || 0, dy = e.dy || 0, moved = (v) => v && [v[0] + dx, v[1] + dy];
+  if (!turns(e)) return { canvas: pixels, w, h, origin: [Math.round(o[0]) - dx, Math.round(o[1]) - dy], map: map && structuredClone(map), box: base.box && { lt: moved(base.box.lt), rb: moved(base.box.rb) }, head: moved(base.head) };
+  let k = Math.min(8, Math.max(0.01, Number(e.scale) || 1));
+  // made smaller, a picture is shrunk smoothly first (every pixel counts towards the one it becomes), then turned; made
+  // bigger, its pixels grow as blocks, as the game's own pictures do
+  if (k < 1) {
+    const tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k)), sx = tw / w, sy = th / h;
+    const small = document.createElement('canvas');
+    small.width = tw; small.height = th;
+    const sc = small.getContext('2d');
+    sc.imageSmoothingEnabled = true; sc.imageSmoothingQuality = 'high';
+    sc.drawImage(pixels, 0, 0, tw, th);
+    const at2 = (v) => v && [v[0] * sx, v[1] * sy];
+    const smallBase = { origin: [o[0] * sx, o[1] * sy], map: map && Object.fromEntries(Object.entries(map).map(([key, v]) => [key, at2(v)])),
+      box: base.box && { lt: at2(base.box.lt), rb: at2(base.box.rb) }, head: at2(base.head) };
+    const r = made(small, smallBase, { ...e, scale: 1, dx: 0, dy: 0, _shrunk: true });
+    const round2 = (v) => v && v.map((n) => Math.round(n));
+    return { ...r, origin: [Math.round(r.origin[0]) - dx, Math.round(r.origin[1]) - dy], map: r.map && Object.fromEntries(Object.entries(r.map).map(([key, v]) => [key, round2(v)])),
+      box: r.box && { lt: [Math.round(r.box.lt[0]) + dx, Math.round(r.box.lt[1]) + dy], rb: [Math.round(r.box.rb[0]) + dx, Math.round(r.box.rb[1]) + dy] }, head: r.head && [Math.round(r.head[0]) + dx, Math.round(r.head[1]) + dy] };
+  }
   const a = (e.angle * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a), fx = e.flipX ? -1 : 1, fy = e.flipY ? -1 : 1;
-  // a point of the picture as it was -> where it is now (about the pivot), and back
-  const fwd = (x, y) => { const X = (x - pv[0]) * fx, Y = (y - pv[1]) * fy; return [pv[0] + X * cos - Y * sin, pv[1] + X * sin + Y * cos]; };
-  const back = (x, y) => { const X = x - pv[0], Y = y - pv[1]; return [pv[0] + (X * cos + Y * sin) * fx, pv[1] + (-X * sin + Y * cos) * fy]; };
+  // a point of the picture as it was -> where it is now (sized and turned about the pivot), and back
+  const fwd = (x, y) => { const X = (x - pv[0]) * fx * k, Y = (y - pv[1]) * fy * k; return [pv[0] + X * cos - Y * sin, pv[1] + X * sin + Y * cos]; };
+  const back = (x, y) => { const X = x - pv[0], Y = y - pv[1]; return [pv[0] + ((X * cos + Y * sin) / k) * fx, pv[1] + ((-X * sin + Y * cos) / k) * fy]; };
   const cs = [fwd(0, 0), fwd(w, 0), fwd(0, h), fwd(w, h)], xs = cs.map((c) => c[0]), ys = cs.map((c) => c[1]);
   const x0 = Math.floor(Math.min(...xs) + 1e-6), y0 = Math.floor(Math.min(...ys) + 1e-6);
   const W = Math.max(1, Math.ceil(Math.max(...xs) - 1e-6) - x0), H = Math.max(1, Math.ceil(Math.max(...ys) - 1e-6) - y0);
@@ -70,8 +98,16 @@ export function made(pixels, base, e) {
   const at = (x, y) => { const q = fwd(x, y); return [Math.round(q[0] - x0), Math.round(q[1] - y0)]; };
   const O = at(o[0], o[1]);
   let m2 = null;
-  if (map) { m2 = {}; for (const [k, v] of Object.entries(map)) { const P = at(o[0] + v[0], o[1] + v[1]); m2[k] = [P[0] - O[0], P[1] - O[1]]; } }
-  return { canvas, w: W, h: H, origin: [O[0] - e.dx, O[1] - e.dy], map: m2 };
+  if (map) { m2 = {}; for (const [key, v] of Object.entries(map)) { const P = at(o[0] + v[0], o[1] + v[1]); m2[key] = [P[0] - O[0], P[1] - O[1]]; } }
+  // a monster's body box (lt to rb, about its point) and head, where they are on the picture now
+  let box = null, head = null;
+  if (base.box) {
+    const { lt, rb } = base.box, cs2 = [[lt[0], lt[1]], [rb[0], lt[1]], [rb[0], rb[1]], [lt[0], rb[1]]].map(([x, y]) => at(o[0] + x, o[1] + y));
+    const bx = cs2.map((c) => c[0] - O[0] + dx), by = cs2.map((c) => c[1] - O[1] + dy);
+    box = { lt: [Math.min(...bx), Math.min(...by)], rb: [Math.max(...bx), Math.max(...by)] };
+  }
+  if (base.head) { const P = at(o[0] + base.head[0], o[1] + base.head[1]); head = [P[0] - O[0] + dx, P[1] - O[1] + dy]; }
+  return { canvas, w: W, h: H, origin: [O[0] - dx, O[1] - dy], map: m2, box, head };
 }
 /** A canvas as a PNG. */
 export const pngOf = (canvas) => new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('The picture could not be made.'))), 'image/png'));

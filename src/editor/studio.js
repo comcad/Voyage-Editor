@@ -1,7 +1,8 @@
 /**
- * The Animate view: an equip on a character, or an NPC, large, in a pose and frame you pick, playing or still. Click a
- * part of it (the equip's, not the character's) and change it right there: drag it into place, turn it, flip it,
- * paint its pixels, put it in another layer or use another picture. Everything shows as you do it; Save keeps it.
+ * The Animate view: an equip on a character, or an NPC or a monster, large, in a pose and frame you pick, playing or
+ * still. Click a part of it (the equip's, not the character's) and change it right there: drag it into place, make it
+ * bigger or smaller (that picture, or all of them at once), turn it, flip it, paint its pixels, put it in another
+ * layer or use another picture. Everything shows as you do it; Save keeps it.
  *
  * What it is shown from is the editor's own record (its tree, changed in place) and the edits of its pictures
  * (picedit.js), which the tab keeps until Save makes them pictures of yours. The tab says what a frame's parts are
@@ -32,6 +33,7 @@ export function studio(o) {
   const equip = o.kind === 'equip';
   let look = null, seq = 0, action = o.pose || null, frame = 0, back = false, playing = false, right = false, t = 0, last = 0;
   let view = { k: 3, x: 0, y: 0 }, sel = null, hover = null, drag = null, painting = false, alive = true;
+  let sizeAll = !equip;   // a size given to every picture of it (an NPC's or a monster's whole body), or to the one picked
   let recAt = new Map(), recPath = new Map(), cloneAt = new Map();   // (equip) a picture's place in the tree <-> the record's node, the drawn copy's node
   const images = new Map();   // (NPC) pictures by address
 
@@ -47,7 +49,18 @@ export function studio(o) {
   const bar = h('div', { class: 'studio-bar' }, poseSel, strip, playBtn, turnBtn, h('span', { class: 'spacer' }),
     h('button', { type: 'button', 'aria-label': 'Zoom out', title: 'Zoom out', onclick: () => zoomBy(-1) }, '−'), zoomLabel,
     h('button', { type: 'button', 'aria-label': 'Zoom in', title: 'Zoom in', onclick: () => zoomBy(1) }, '+'),
+    h('button', { type: 'button', title: 'Zoom to show all of it', onclick: () => fitView() }, 'Fit'),
     h('button', { type: 'button', title: 'Back to the middle', onclick: () => { view.x = 0; view.y = 0; } }, 'Centre'));
+  /** Zooms so the frame shown fits the stage (from its feet up), at most 3x. */
+  function fitView(tries = 0) {
+    let w2 = 60, h2 = 90;
+    if (!equip && !(npcNode() && npcPic(npcNode())) && tries < 20) { setTimeout(() => fitView(tries + 1), 150); return; }   // (its picture still loading)
+    if (equip) { const parts = composed(); if (parts.length) { const xs = parts.flatMap((q) => [q.x, q.x + (q.node._w || 0)]), ys = parts.flatMap((q) => [q.y, q.y + (q.node._h || 0)]); w2 = 2 * Math.max(...xs.map(Math.abs)); h2 = -Math.min(...ys); } }
+    else { const n = npcNode(), q = n && npcPic(n); if (q) { w2 = 2 * Math.max(q.origin[0], q.w - q.origin[0]); h2 = q.origin[1]; } }
+    const room = Math.min((cv.width - 40) / Math.max(1, w2), (cv.height * 0.72 - 30) / Math.max(1, h2));
+    view.k = [...ZOOMS].reverse().find((z) => z <= Math.min(3, room)) || ZOOMS[0];
+    view.x = 0; view.y = 0;
+  }
   const hint = h('div', { class: 'studio-hint' });
   const holder = h('div', { class: 'studio-holder' }, cv);
   const side = h('div', { class: 'studio-side' });
@@ -55,8 +68,10 @@ export function studio(o) {
   new ResizeObserver(() => { cv.width = Math.max(50, holder.clientWidth); cv.height = Math.max(50, holder.clientHeight); }).observe(holder);
 
   const feet = () => [Math.round(cv.width / 2 + view.x), Math.round(cv.height * 0.72 + view.y)];
+  /** The zooms the stage steps through (below 1x for a big picture). */
+  const ZOOMS = [0.05, 0.1, 0.125, 0.2, 0.25, 0.33, 0.5, 0.75, 1, 2, 3, 4, 5, 6, 8, 10];
   function zoomBy(by, at = null) {
-    const k = Math.max(1, Math.min(10, view.k + by));
+    const i = ZOOMS.findIndex((z) => z >= view.k - 1e-6), k = ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? ZOOMS.length - 1 : i) + by))];
     if (k === view.k) return;
     if (at) { const [fx, fy] = feet(), lx = (at[0] - fx) / view.k, ly = (at[1] - fy) / view.k; view.x += (at[0] - lx * k) - fx; view.y += (at[1] - ly * k) - fy; }
     view.k = k;
@@ -108,7 +123,9 @@ export function studio(o) {
     if (action) poseSel.value = action;
     afterPose(false);
   }
+  let fitted = false;
   function afterPose(keepSel = false) {
+    if (!fitted) { fitted = true; requestAnimationFrame(() => requestAnimationFrame(() => fitView())); }
     if (!keepSel) sel = null;
     if (equip && look) assets.preload(lookCanvases(look, [action]));
     if (frame >= frameCount()) frame = 0;
@@ -172,10 +189,10 @@ export function studio(o) {
     const W = cv.width, H = cv.height, [fx, fy] = feet(), k = view.k;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = view.k < 1;   // (zoomed out, a big picture is shown smoothly)
     ctx.strokeStyle = 'rgba(128,128,128,0.45)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, fy + 0.5); ctx.lineTo(W, fy + 0.5); ctx.stroke();
-    zoomLabel.textContent = `${k}×`;
+    zoomLabel.textContent = k < 1 ? `${Math.round(k * 100)}%` : `${k}×`;
     ctx.save();
     ctx.translate(fx, fy); ctx.scale(k, k);
     if (equip) drawParts(ctx, assets, composed(), 0, 0, right, 1, true);
@@ -334,17 +351,32 @@ export function studio(o) {
   }
   /** What can be done to the part picked. */
   function tools(part) {
-    const node = part.node, ed = o.edits.get(node), e = ed?.e || { angle: 0, flipX: false, flipY: false, dx: 0, dy: 0 };
+    const node = part.node, ed = o.edits.get(node), e = ed?.e || { scale: 1, angle: 0, flipX: false, flipY: false, dx: 0, dy: 0 };
+    const pctOf = (x) => Math.round((x.scale ?? 1) * 1000) / 10;
+    // (the slider moves evenly in steps of size: its middle is 100%, its ends 2% and 800%)
+    const toSlider = (k) => Math.round((Math.log(k) / Math.log(2)) * 100), fromSlider = (v) => Math.round(2 ** (v / 100) * 1000) / 1000;
+    const size = h('input', { type: 'range', min: toSlider(0.02), max: toSlider(8), step: 1, value: toSlider(e.scale ?? 1), 'aria-label': 'Its size' });
+    const sizeNum = h('input', { type: 'number', min: 1, max: 800, step: 'any', value: pctOf(e), class: 'deg', 'aria-label': 'Size in percent' });
+    const baseH = () => o.edits.get(node)?.pixels.height || node._h || 0;
+    const tall = h('input', { type: 'number', min: 1, max: 2000, step: 1, class: 'deg', 'aria-label': 'Its height in pixels', title: 'How many pixels tall it is in the game' });
+    const scope = h('div', { class: 'segmented', role: 'group', 'aria-label': 'What is sized' }, [[false, 'This picture'], [true, equip ? 'Every picture of it' : 'All of it']].map(([all, label]) => h('button', {
+      type: 'button', class: sizeAll === all ? 'on' : null, 'aria-pressed': sizeAll === all, title: all ? 'Every frame of every pose (not its icon)' : 'Only the picture picked',
+      onclick: (ev) => { sizeAll = all; for (const b of ev.currentTarget.parentElement.children) { const on = b === ev.currentTarget; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } },
+    }, label)));
     const join = node.map && Object.keys(node.map)[0];
     const at = h('span', { class: 'muted' }), angle = h('input', { type: 'range', min: -180, max: 180, step: 1, value: e.angle, 'aria-label': 'Turn it, in degrees' });
     const deg = h('input', { type: 'number', min: -360, max: 360, step: 1, value: e.angle, class: 'deg', 'aria-label': 'Degrees' });
     const undoBtn = h('button', { type: 'button', class: 'quiet danger', onclick: async () => { o.dropEdit(node); painting = false; o.touch(); if (equip) await build(); else drawSide(); } }, 'Undo my changes to it');
     const flipX = h('button', { type: 'button', 'aria-pressed': !!e.flipX, class: e.flipX ? 'on' : null, onclick: () => edit((x) => { x.e.flipX = !x.e.flipX; }, true, () => drawSide()) }, 'Flip ↔');
     const flipY = h('button', { type: 'button', 'aria-pressed': !!e.flipY, class: e.flipY ? 'on' : null, onclick: () => edit((x) => { x.e.flipY = !x.e.flipY; }, true, () => drawSide()) }, 'Flip ↕');
-    numbers = () => { const x = o.edits.get(node)?.e || e; undoBtn.hidden = !touched(o.edits.get(node)); at.textContent = x.dx || x.dy ? `moved ${x.dx > 0 ? '+' : ''}${x.dx}, ${x.dy > 0 ? '+' : ''}${x.dy}` : 'where it was'; if (document.activeElement !== angle) angle.value = x.angle; if (document.activeElement !== deg) deg.value = x.angle; };
+    numbers = () => { const x = o.edits.get(node)?.e || e; if (document.activeElement !== size) size.value = toSlider(x.scale ?? 1); if (document.activeElement !== sizeNum) sizeNum.value = pctOf(x); if (document.activeElement !== tall && baseH()) tall.value = Math.max(1, Math.round(baseH() * (x.scale ?? 1))); undoBtn.hidden = !touched(o.edits.get(node)); at.textContent = x.dx || x.dy ? `moved ${x.dx > 0 ? '+' : ''}${x.dx}, ${x.dy > 0 ? '+' : ''}${x.dy}` : 'where it was'; if (document.activeElement !== angle) angle.value = x.angle; if (document.activeElement !== deg) deg.value = x.angle; };
     numbers();
     // (a picture turned before, and saved, comes back with its turn: shown once its edit has been read)
     if (!ed) o.editFor(node).then(() => { if (nodeOf(sel) === node && numbers) numbers(); }, () => {});
+    size.addEventListener('input', () => setSize(fromSlider(Number(size.value)), false));
+    size.addEventListener('change', () => o.touch());
+    sizeNum.addEventListener('change', () => { const v = Number(sizeNum.value); if (Number.isFinite(v) && v > 0) setSize(Math.max(1, Math.min(800, v)) / 100, true); });
+    tall.addEventListener('change', async () => { const v = Number(tall.value); await o.editFor(node); const hh = baseH(); if (Number.isFinite(v) && v > 0 && hh) { await setSize(Math.max(0.01, Math.min(8, v / hh)), true); fitView(); } });
     angle.addEventListener('input', () => edit((x) => { x.e.angle = Number(angle.value); }, false));
     angle.addEventListener('change', () => o.touch());
     deg.addEventListener('change', () => { const v = Number(deg.value); if (Number.isFinite(v)) edit((x) => { x.e.angle = Math.max(-360, Math.min(360, Math.round(v))); }, true); });
@@ -355,6 +387,12 @@ export function studio(o) {
       part.separate ? h('button', { type: 'button', onclick: async () => { await part.separate.run(); o.touch(); if (equip) { sel = null; await build(); } else drawSide(); } }, part.separate.label) : null)];
     out.push(h('div', { class: 'tool' }, h('strong', null, 'Move'), h('span', { class: 'muted' }, ' drag it on the stage, or'),
       h('div', { class: 'tool-row' }, [['←', -1, 0], ['↑', 0, -1], ['↓', 0, 1], ['→', 1, 0]].map(([s, x, y]) => h('button', { type: 'button', 'aria-label': `Nudge ${s}`, onclick: () => nudge(x * (right ? -1 : 1), y) }, s)), at)));
+    out.push(h('div', { class: 'tool' }, h('strong', null, 'Size'), h('span', { class: 'muted' }, join ? ` about its ${join} point` : equip ? ' about its point' : ' from its feet up'),
+      h('div', { class: 'tool-row' }, size, sizeNum, h('span', { class: 'muted' }, '%')),
+      h('div', { class: 'tool-row' }, h('span', { class: 'muted' }, 'or'), tall, h('span', { class: 'muted' }, 'pixels tall in the game')),
+      h('div', { class: 'tool-row' }, h('button', { type: 'button', onclick: () => setSize(stepSize(-1), true) }, 'Smaller'), h('button', { type: 'button', onclick: () => setSize(1, true) }, '100%'),
+        h('button', { type: 'button', onclick: () => setSize(stepSize(1), true) }, 'Bigger'), scope),
+      h('p', { class: 'muted small' }, equip ? 'Every picture of it: all its frames in every pose, sized the same, so it stays the size you want as it moves.' : 'All of it: every frame of every pose, so it is the same size whatever it does. Its body (what is hit) grows with it.')));
     out.push(h('div', { class: 'tool' }, h('strong', null, 'Turn'), h('span', { class: 'muted' }, join ? ` about its ${join} point (the orange dot)` : equip ? ' about its point' : ' about its feet'),
       h('div', { class: 'tool-row' }, angle, deg, h('span', { class: 'muted' }, '°')),
       h('div', { class: 'tool-row' }, [-90, -15, 15, 90].map((d) => h('button', { type: 'button', onclick: () => edit((x) => { x.e.angle = ((x.e.angle + d + 540) % 360) - 180; }, true) }, `${d > 0 ? '+' : ''}${d}°`)), flipX, flipY)));
@@ -385,6 +423,24 @@ export function studio(o) {
     return [h('div', { class: 'tool' }, h('label', { class: 'field' }, h('span', null, 'Shows for'), h('input', { type: 'number', min: 0, step: 10, value: Math.abs(Number(node.delay) || 100), onchange: (e) => { node.delay = Math.max(0, Number(e.target.value) || 0); o.touch(); } }), h('span', { class: 'muted' }, 'ms'))),
       h('div', { class: 'tool-row' }, h('button', { type: 'button', onclick: () => { o.addFrame(action, frame); frame += 1; o.touch(); afterPose(); } }, 'Copy this frame'),
         h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (o.removeFrame(action, frame)) { frame = Math.max(0, frame - 1); o.touch(); afterPose(); } } }, 'Take this frame off'))];
+  }
+  /** The next size up or down from the picked picture's (a quarter bigger, or smaller; 1% to 800%). */
+  function stepSize(by) {
+    const cur = o.edits.get(nodeOf(sel))?.e.scale ?? 1;
+    return Math.max(0.01, Math.min(8, Math.round(cur * (by > 0 ? 1.25 : 0.8) * 1000) / 1000));
+  }
+  let sizing = null;
+  /** Gives the picked picture (or, with "all of it", every picture of the record) size `k`: shown at once; `done`: one to keep. */
+  async function setSize(k, done) {
+    if (!sizeAll) { await edit((x) => { x.e.scale = k; }, done); return; }
+    const nodes = o.allPictures();
+    if (nodes.length > 1 && !sizing) hint.textContent = `Reading its ${nodes.length} pictures...`;
+    const eds = await (sizing ??= Promise.all(nodes.map((n) => o.editFor(n))).finally(() => { sizing = null; }));
+    for (const x of eds) { x.e.scale = k; remake(x); }
+    applyLive();
+    numbers?.();
+    if (done) o.touch();
+    if (hint.textContent.startsWith('Reading its')) hint.textContent = '';
   }
   /** Changes the picked part's edit (made when it is first changed) and shows it; `done`: one to keep. */
   async function edit(fn, done, then = null) {

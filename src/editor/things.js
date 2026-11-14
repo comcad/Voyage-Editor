@@ -568,12 +568,14 @@ export function thingsTab(host, kinds, blurb) {
         let from = ed.base.canvas;
         if (ed.painted) { const b = freshName(); await sendPicture(`/pictures/${rec.kind}/${b}`, await pngOf(ed.pixels)); from = `_custom/${dir}/${b}.png`; }
         rec.layout.pics = isObj(rec.layout.pics) ? rec.layout.pics : {};
-        rec.layout.pics[name] = { from, origin: ed.base.origin, map: ed.base.map, e: { ...ed.e } };
+        rec.layout.pics[name] = { from, origin: ed.base.origin, map: ed.base.map, box: ed.base.box, head: ed.base.head, e: { ...ed.e } };
       }
     }
     if (node._canvas !== at) delete node._at;
     node._canvas = at; node._w = live.w; node._h = live.h; node.origin = [...live.origin];
     if (live.map) node.map = structuredClone(live.map);
+    if (live.box) { node.lt = [...live.box.lt]; node.rb = [...live.box.rb]; }   // (a monster's body, sized and moved with it)
+    if (live.head) node.head = [...live.head];
     edits.delete(node);
   }
   /** Makes every changed picture one of yours before saving; false (and says why) when one couldn't be. */
@@ -643,6 +645,13 @@ export function thingsTab(host, kinds, blurb) {
     const t = rec.tree, equip = rec.kind === 'equip';
     return studioView({
       kind: equip ? 'equip' : 'npc', rec, pose: animPose, edits, editFor, touch, picSrc,
+      /** Every picture of it but its icon: what "all of it" sizes. */
+      allPictures: () => {
+        const out = [], seen = new Set();
+        const walk = (o, top) => { for (const [k, v] of Object.entries(o)) { if (!v || typeof v !== 'object' || (top && k === 'info')) continue; if (isCanvas(v)) { if (!seen.has(v)) { seen.add(v); out.push(v); } } else walk(v, false); } };
+        walk(t, true);
+        return out;
+      },
       dropEdit: (node) => edits.delete(node),
       partsOf: (pose, f) => (equip ? equipParts(pose, f) : npcParts(pose, f)),
       ownPoses: () => (equip ? framePosesOf(t) : posesOf(t).filter((p) => numKeys(t[p]).length)),

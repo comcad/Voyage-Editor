@@ -41,14 +41,26 @@ export const KINDS = {
   equip: { dir: 'equips', digits: 8, family: 'Character', words: ['name', 'desc'], min: 1000000, max: 1999999 },
   item: { dir: 'items', digits: 8, family: 'Item', words: ['name', 'desc'], min: 2000000, max: 5999999 },
   quest: { dir: 'quests', digits: 5, family: 'Quest', words: [], min: 1, max: 32767 },   // (the game keeps a quest's number in 16 bits)
+  mob: { dir: 'mobs', digits: 7, family: 'Mob', words: ['name'], min: 100000, max: 9999999 },
 };
+/** Where published monsters' drops are written in the customs folder, for Voyage-Server (in place of its database's for each one listed). */
+const DROPS_FILE = 'server/mob-drops.json';
+/** A monster's drops as sent (each { item, chance (out of 1000000), min, max, quest }), made safe; null: it keeps the server's own. */
+function cleanDrops(list) {
+  if (!Array.isArray(list)) return null;
+  const int = (v, lo, hi, d) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  return list.slice(0, 200).filter((d) => d && typeof d === 'object').map((d) => {
+    const min = int(d.min, 1, 2147483647, 1);
+    return { item: int(d.item, 0, 9999999, 0), chance: int(d.chance, 1, 1000000, 1), min, max: Math.max(min, int(d.max, 1, 2147483647, min)), quest: int(d.quest, 0, 32767, 0) };
+  });
+}
 /** The files of Quest a quest is spread over; a quest's tree has a part of each name. */
 const QUEST_PARTS = ['QuestInfo', 'Check', 'Act', 'Say'];
-const LABEL = { map: 'A map', npc: 'An NPC', equip: 'An equip', item: 'An item', quest: 'A quest' };
+const LABEL = { map: 'A map', npc: 'An NPC', equip: 'An equip', item: 'An item', quest: 'A quest', mob: 'A monster' };
 /** An item's first digit: the folder of Item its file is in, and the String file its name is in. */
 const ITEM_CATS = { 2: ['Consume', 'Consume'], 3: ['Install', 'Ins'], 4: ['Etc', 'Etc'], 5: ['Cash', 'Cash'] };
 const PIC_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
-const PIC_URL = /^\/[A-Za-z]+\/_custom\/(maps|npcs|equips|items)\/([A-Za-z0-9][A-Za-z0-9_-]{0,39})\.png$/;
+const PIC_URL = /^\/[A-Za-z]+\/_custom\/(maps|npcs|equips|items|mobs)\/([A-Za-z0-9][A-Za-z0-9_-]{0,39})\.png$/;
 const SET = 'custom';   // the object set and the background set made of the pictures brought in for maps
 const MUSIC = 'BgmCustom';   // the music set made of the tracks brought in: Sound/BgmCustom.img
 const MOST_MUSIC_MS = 3 * 3600 * 1000;
@@ -138,6 +150,7 @@ export class CustomStore {
     const d = pad(id, KINDS[k].digits);
     if (k === 'map') return { rel: `Map/Map/Map${Math.floor(id / 100000000)}/${d}.img`, family: 'Map', string: 'Map', at: [regionOf(id), String(id)] };
     if (k === 'npc') return { rel: `Npc/${d}.img`, family: 'Npc', string: 'Npc', at: [String(id)] };
+    if (k === 'mob') return { rel: `Mob/${d}.img`, family: 'Mob', string: 'Mob', at: [String(id)] };
     if (k === 'equip') return { rel: `Character/${folder}/${d}.img`, family: 'Character', string: 'Eqp', at: ['Eqp', folder === 'TamingMob' ? 'Taming' : folder, String(id)] };
     if (k === 'quest') return { rel: 'Quest/QuestInfo.img', node: String(id), family: 'Quest', string: null, at: [] };
     const [dir, str] = ITEM_CATS[Math.floor(id / 1000000)];
@@ -190,7 +203,7 @@ export class CustomStore {
     const state = this.state(k, id);
     for (const [from, file] of [['draft', this.draftFile(k, id)], ['live', this.liveFile(k, id)]]) {
       const rec = state[from] ? readJson(file) : null;
-      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, layout: rec.layout || null, dialogue: rec.dialogue || null, state, from, savedAt: rec.savedAt };
+      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, layout: rec.layout || null, dialogue: rec.dialogue || null, drops: k === 'mob' ? cleanDrops(rec.drops) : undefined, state, from, savedAt: rec.savedAt };
     }
     const own = this.fromAssets(k, id);
     if (!own) throw bad(`There is no ${k} ${id}.`, 404);
@@ -206,7 +219,8 @@ export class CustomStore {
     }
     const plain = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : undefined);
     const dialogue = k === 'npc' && plain(body.dialogue) && Array.isArray(body.dialogue.nodes) && Array.isArray(body.dialogue.wires) ? body.dialogue : undefined;
-    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, layout: plain(body.layout), dialogue, savedAt: Date.now() }));
+    const drops = k === 'mob' ? cleanDrops(body.drops) : undefined;
+    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, layout: plain(body.layout), dialogue, drops, savedAt: Date.now() }));
     return this.state(k, id);
   }
   discard(k, id) { this.checkId(k, id); fs.rmSync(this.draftFile(k, id), { force: true }); return this.state(k, id); }
@@ -234,10 +248,18 @@ export class CustomStore {
     for (const rel of pub.files.keys()) { const tree = this.fileTree(rel); if (tree) want.set(`${rel}.json`, JSON.stringify(tree)); }
     for (const file of pub.strings.keys()) { const tree = this.stringTree(file); if (tree) want.set(`String/${file}.img.json`, JSON.stringify(tree)); }
     // the pictures brought in, where the trees that use them say they are (a tree's own folder, then _custom/...)
-    for (const k of ['map', 'npc', 'equip', 'item']) {
+    for (const k of ['map', 'npc', 'equip', 'item', 'mob']) {
       for (const p of this.pictures(k)) want.set(`${KINDS[k].family}/_custom/${KINDS[k].dir}/${p.name}.png`, { file: path.join(this.picDir(k), `${p.name}.png`) });
     }
     for (const set of ['Obj', 'Back']) { const tree = this.pictureSet(set); if (tree) want.set(`Map/${set}/${SET}.img.json`, JSON.stringify(tree)); }
+    // published monsters' drops, for the game server to use in place of its database's for each one listed
+    const drops = {};
+    for (const t of pub.things) {
+      if (t.k !== 'mob') continue;
+      const list = cleanDrops(readJson(t.file)?.drops);
+      if (list) drops[t.id] = Object.fromEntries(list.map((d, i) => [String(i), d]));
+    }
+    if (Object.keys(drops).length) want.set(DROPS_FILE, JSON.stringify(drops));
     // a published NPC's dialogue, as the script the game server runs for it
     for (const t of pub.things) {
       if (t.k !== 'npc') continue;
@@ -375,6 +397,7 @@ export class CustomStore {
     if (k === 'map') { for (const region of Object.values(this.string('Map'))) for (const [id, n] of Object.entries(region || {})) if (n && typeof n === 'object' && hit(id, n.mapName, n.streetName)) add(Number(id), n.mapName, n.streetName); }
     else if (k === 'npc') { for (const [id, n] of Object.entries(this.string('Npc'))) if (hit(id, n?.name, n?.func)) add(Number(id), n?.name, n?.func); }
     else if (k === 'equip') { for (const [folder, list] of Object.entries(this.string('Eqp').Eqp || {})) for (const [id, n] of Object.entries(list || {})) if (hit(id, n?.name, folder)) add(Number(id), n?.name, folder === 'Taming' ? 'TamingMob' : folder); }
+    else if (k === 'mob') { for (const [id, n] of Object.entries(this.string('Mob'))) if (/^\d+$/.test(id) && hit(id, n?.name, '')) add(Number(id), n?.name, ''); }
     else if (k === 'quest') { this.inAssets('quest', 1); for (const [id, name] of this.groups.get('Quest/QuestInfo.img')) if (/^\d+$/.test(id) && hit(id, name, '')) add(Number(id), name, ''); }
     else for (const [dir, str] of Object.values(ITEM_CATS)) { const list = str === 'Etc' ? this.string('Etc').Etc : this.string(str); for (const [id, n] of Object.entries(list || {})) if (hit(id, n?.name, dir)) add(Number(id), n?.name, dir); }
     return out;
@@ -536,7 +559,7 @@ Object.assign(CustomStore.prototype, {
       };
       walk(path.join(this.customs, rel), rel);
     }
-    const n = this.string(family)?.[String(id)], st = kind === 'npc' ? this.state('npc', id) : null;
+    const n = this.string(family)?.[String(id)], st = id >= KINDS[kind].min && id <= KINDS[kind].max ? this.state(kind, id) : null;
     return {
       assets: fs.existsSync(path.join(this.assets, `${rel}.json`)), own: !!st && (st.draft || st.live), files,
       name: n && typeof n === 'object' ? { name: String(n.name ?? ''), ...(kind === 'npc' ? { func: String(n.func ?? '') } : {}) } : null,
@@ -614,11 +637,9 @@ export function customRoutes(api, guard, store) {
     if (!rel) throw bad('No such list.', 404);
     res.json(store.sets(rel));
   }));
-  // monsters by number or name (the map editor's picker; they have no editor of their own)
+  // monsters by number or name (the map editor's picker): yours first, then the game's
   api.get('/names/mob', guard, wrap((req, res) => {
-    const words = String(req.query.q || '').trim().toLowerCase(), out = [];
-    for (const [id, v] of Object.entries(store.string('Mob'))) { const name = String(v?.name ?? ''); if (!words || id.startsWith(words) || name.toLowerCase().includes(words)) { out.push({ id: Number(id), name }); if (out.length >= 60) break; } }
-    res.json(out);
+    res.json(store.search('mob', String(req.query.q || '')).map((r) => ({ id: r.id, name: r.name, own: r.draft || r.live })));
   }));
   api.get('/pictures/:kind', guard, wrap((req, res) => res.json(store.pictures(req.params.kind))));
   api.put('/pictures/:kind/:name', guard, express.raw({ type: 'image/png', limit: '12mb' }), wrap((req, res) => { res.json(store.addPicture(req.params.kind, req.params.name, req.body)); console.log(`picture ${req.params.name} brought in for ${KINDS[req.params.kind].dir}`); }));

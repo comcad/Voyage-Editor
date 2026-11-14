@@ -6,10 +6,13 @@
  *   pictures/<name>.png            the pictures of yours it uses (objects and backgrounds of the set "custom")
  *   music/<name>.mp3               its music, when it plays a track of yours
  *   npc-pictures/<name>.png        the pictures of the NPCs of yours on it
- *   customs/Mob/<id>.img.json ...  the monsters on it made as files of the customs folder: each one's file and pictures
+ *   mob-pictures/<name>.png        the pictures of the monsters of yours on it (the editor's own, in map.json's mobDrafts)
+ *   customs/Mob/<id>.img.json ...  the monsters on it made by hand as files of the customs folder: each one's file and pictures
  *
  * An NPC of yours is one the editor has (your draft or published one), or one made by hand in the customs folder: that
- * one goes as one of yours, its pictures among your NPC pictures. Importing saves the map, and the NPCs, as your drafts;
+ * one goes as one of yours, its pictures among your NPC pictures. A monster of the editor's goes the same way (its drops
+ * too); one made by hand in the customs folder goes as its files. Importing saves the map, its NPCs and the editor's
+ * monsters as your drafts;
  * pictures, music and monsters are brought in. One with the number or name of a different one here comes in under the
  * next free number or as <name>_2, and the map is made to use that; one that is the same is used as it is.
  */
@@ -18,10 +21,10 @@ import { pictureUrl, download } from './ui.js';
 import { musicUrl, musicList, importTrack } from './music.js';
 import { makeZip, readZip } from './zip.js';
 
-const FORMAT = 'voyage-map', VERSION = 2, OWN_MUSIC = 'BgmCustom/';
+const FORMAT = 'voyage-map', VERSION = 3, OWN_MUSIC = 'BgmCustom/';
 const LAYERS = ['0', '1', '2', '3', '4', '5', '6', '7'];
 const NAME = '[A-Za-z0-9][A-Za-z0-9_-]{0,39}';
-const NPC_PIC = new RegExp(`^_custom/npcs/(${NAME})\\.png$`);
+const NPC_PIC = new RegExp(`^_custom/npcs/(${NAME})\\.png$`), MOB_PIC = new RegExp(`^_custom/mobs/(${NAME})\\.png$`);
 const MOB_FILE = /^Mob\/(\d{7})\.img(?:\.json|(?:\/[A-Za-z0-9_-]+)+\.png)$/;
 const pad7 = (n) => String(n).padStart(7, '0');
 /** The objects made of your pictures (the set "custom"), and the backgrounds. */
@@ -105,11 +108,26 @@ export async function exportMap(doc) {
   }
   for (const [name, bytes] of npcPictures) files.push([`npc-pictures/${name}.png`, bytes]);
 
-  // monsters made as files of the customs folder (and any of yours they take their pictures from, info/link)
-  const mobs = [], seen = new Set();
+  // monsters of yours: the editor's own (their pictures become monster pictures), or ones made by hand as files of the
+  // customs folder; and any of yours one takes its pictures from (info/link)
+  const mobs = [], mobDrafts = [], mobPictures = new Map(), seen = new Set();
   const addMob = async (id) => {
     if (seen.has(id)) return;
     seen.add(id);
+    let rec = null;
+    try { rec = await api(`/c/mob/${id}`); } catch { /* not one the editor has a number for */ }
+    if (rec && rec.from !== 'assets') {
+      mobDrafts.push({ id, words: rec.words, tree: rec.tree, drops: Array.isArray(rec.drops) ? rec.drops : null });
+      for (const c of canvases(rec.tree)) {
+        const m = MOB_PIC.exec(c._canvas);
+        if (!m || mobPictures.has(m[1])) continue;
+        const bytes = await bytesOf(pictureUrl('mob', m[1]));
+        if (bytes) mobPictures.set(m[1], bytes); else missing.push(`monster ${id}'s picture ${m[1]}`);
+      }
+      const link = Number(rec.tree?.info?.link);
+      if (Number.isInteger(link) && link > 0) await addMob(link);
+      return;
+    }
     const life = await api(`/life/mob/${id}`);
     if (!life.files.length) return;   // the game's own
     mobs.push({ id, name: life.name?.name ?? '', files: life.files });
@@ -123,8 +141,9 @@ export async function exportMap(doc) {
     if (Number.isInteger(link) && link > 0) await addMob(link);
   };
   for (const id of lifeIds(tree, 'm')) await addMob(id);
+  for (const [name, bytes] of mobPictures) files.push([`mob-pictures/${name}.png`, bytes]);
 
-  const map = { format: FORMAT, version: VERSION, id: doc.id, words: doc.name, backPictures, npcs, mobs, tree };
+  const map = { format: FORMAT, version: VERSION, id: doc.id, words: doc.name, backPictures, npcs, mobs, mobDrafts, tree };
   files.unshift(['map.json', new TextEncoder().encode(JSON.stringify(map, null, 1))]);
   const label = fileWord(doc.name?.mapName || '');
   download(await makeZip(files), `map-${doc.id}${label ? `-${label}` : ''}.zip`);
@@ -147,16 +166,18 @@ export async function readMapZip(file) {
   try { map = JSON.parse(text(files.get(at))); } catch { throw new Error('its map.json can’t be read'); }
   if (map?.format !== FORMAT || !map.tree || typeof map.tree !== 'object' || Array.isArray(map.tree)) throw new Error('its map.json isn’t a map exported by the editor');
   if (map.version > VERSION) throw new Error('it was exported by a newer editor');
-  const pictures = new Map(), npcPictures = new Map();
-  const pic = new RegExp(`^pictures/(${NAME})\\.png$`), tune = new RegExp(`^music/(${NAME})\\.mp3$`), npcPic = new RegExp(`^npc-pictures/(${NAME})\\.png$`);
+  const pictures = new Map(), npcPictures = new Map(), mobPictures = new Map();
+  const pic = new RegExp(`^pictures/(${NAME})\\.png$`), tune = new RegExp(`^music/(${NAME})\\.mp3$`), npcPic = new RegExp(`^npc-pictures/(${NAME})\\.png$`), mobPic = new RegExp(`^mob-pictures/(${NAME})\\.png$`);
   let music = null;
   for (const [n, bytes] of files) {
     if (!n.startsWith(base)) continue;
-    const rel = n.slice(base.length), p = pic.exec(rel), t = tune.exec(rel), q = npcPic.exec(rel);
-    if (p) pictures.set(p[1], bytes); else if (t) music = { name: t[1], bytes }; else if (q) npcPictures.set(q[1], bytes);
+    const rel = n.slice(base.length), p = pic.exec(rel), t = tune.exec(rel), q = npcPic.exec(rel), mp = mobPic.exec(rel);
+    if (p) pictures.set(p[1], bytes); else if (t) music = { name: t[1], bytes }; else if (q) npcPictures.set(q[1], bytes); else if (mp) mobPictures.set(mp[1], bytes);
   }
   const npcs = (Array.isArray(map.npcs) ? map.npcs : []).filter((n) => Number.isInteger(n?.id) && n.id > 0 && n.id <= 9999999 && n.tree && typeof n.tree === 'object' && !Array.isArray(n.tree))
     .map((n) => ({ id: n.id, tree: n.tree, words: { name: String(n.words?.name ?? '').slice(0, 100), func: String(n.words?.func ?? '').slice(0, 100) } }));
+  const mobDrafts = (Array.isArray(map.mobDrafts) ? map.mobDrafts : []).filter((m) => Number.isInteger(m?.id) && m.id >= 100000 && m.id <= 9999999 && m.tree && typeof m.tree === 'object' && !Array.isArray(m.tree))
+    .map((m) => ({ id: m.id, tree: m.tree, words: { name: String(m.words?.name ?? '').slice(0, 100) }, drops: Array.isArray(m.drops) ? m.drops : null }));
   const mobs = [];
   for (const m of Array.isArray(map.mobs) ? map.mobs : []) {
     if (!Number.isInteger(m?.id) || m.id < 0 || m.id > 9999999 || !Array.isArray(m.files)) continue;
@@ -166,19 +187,20 @@ export async function readMapZip(file) {
   }
   return {
     id: Number.isInteger(map.id) ? map.id : null, tree: map.tree, backPictures: map.backPictures && typeof map.backPictures === 'object' ? map.backPictures : {},
-    words: { streetName: String(map.words?.streetName ?? '').slice(0, 100), mapName: String(map.words?.mapName ?? '').slice(0, 100) }, pictures, music, npcs, npcPictures, mobs,
+    words: { streetName: String(map.words?.streetName ?? '').slice(0, 100), mapName: String(map.words?.mapName ?? '').slice(0, 100) }, pictures, music, npcs, npcPictures, mobs, mobDrafts, mobPictures,
   };
 }
 
-/** The number an NPC of the zip gets here: its own, or the next free one; one of yours that is the same is used as it is. */
-async function npcPlace(id, want) {
+/** The number an NPC (or the editor's monster) of the zip gets here: its own, or the next free one; one of yours that is the same is used as it is. */
+async function draftPlace(kind, id, want) {
   for (let n = id, tries = 0; tries < 2000 && n <= 9999999; n++, tries++) {
-    const s = await api(`/c/npc/${n}/state`);
+    const s = await api(`/c/${kind}/${n}/state`);
     if (!s.assets && !s.draft && !s.live) return { id: n, fresh: true };
-    if (s.draft || s.live) { const r = await api(`/c/npc/${n}`); if (JSON.stringify({ tree: r.tree, words: r.words }) === want(n)) return { id: n, fresh: false }; }
+    if (s.draft || s.live) { const r = await api(`/c/${kind}/${n}`); if (JSON.stringify({ tree: r.tree, words: r.words }) === want(n)) return { id: n, fresh: false }; }
   }
-  throw new Error(`there is no free NPC number near ${id}`);
+  throw new Error(`there is no free ${kind === 'mob' ? 'monster' : 'NPC'} number near ${id}`);
 }
+const npcPlace = (id, want) => draftPlace('npc', id, want);
 /** The same for a monster: its own number, or the next one neither the assets nor the customs folder has. */
 async function mobPlace(id, want) {
   for (let n = id, tries = 0; tries < 2000 && n <= 9999999; n++, tries++) {
@@ -253,9 +275,29 @@ export async function importMap(z, id) {
     if (drafts.length) notes.push(`NPC${drafts.length === 1 ? '' : 's'} ${drafts.join(', ')} ${drafts.length === 1 ? 'is a draft' : 'are drafts'}: publish ${drafts.length === 1 ? 'it' : 'them'} on the NPCs tab too`);
   }
 
-  // monsters: their files go in the customs folder as files of yours (under the next free number when one has theirs).
-  // One another takes its pictures from (info/link) comes first, so the one after points at where it is here.
+  // the editor's monsters: their pictures first, then each one as your draft, one another takes its looks from first
   const movedMob = new Map(), wrote = [];
+  if (z.mobDrafts.length) {
+    const takenMob = new Set((await api('/pictures/mob')).map((p) => p.name)), mobRenamed = new Map();
+    for (const [name, bytes] of z.mobPictures) {
+      const { as, fresh } = await placeFor(name, bytes, takenMob, (n) => pictureUrl('mob', n));
+      if (fresh) { await sendPicture(`/pictures/mob/${as}`, new Blob([bytes], { type: 'image/png' })); takenMob.add(as); }
+      if (as !== name) mobRenamed.set(name, as);
+    }
+    const drafts = [];
+    for (const m of [...z.mobDrafts].reverse()) {
+      const t = structuredClone(m.tree), link = Number(t.info?.link);
+      for (const c of canvases(t)) { const mm = MOB_PIC.exec(c._canvas); if (mm && mobRenamed.has(mm[1])) c._canvas = `_custom/mobs/${mobRenamed.get(mm[1])}.png`; }
+      if (movedMob.has(link)) t.info.link = sameForm(t.info.link, movedMob.get(link));
+      const want = JSON.stringify({ tree: t, words: m.words });
+      const place = await draftPlace('mob', m.id, () => want);
+      if (place.fresh) { await api(`/c/mob/${place.id}`, { method: 'PUT', body: { tree: t, words: m.words, drops: m.drops } }); drafts.push(place.id); }
+      if (place.id !== m.id) movedMob.set(m.id, place.id);
+    }
+    if (drafts.length) notes.push(`monster${drafts.length === 1 ? '' : 's'} ${drafts.join(', ')} ${drafts.length === 1 ? 'is a draft' : 'are drafts'}: publish ${drafts.length === 1 ? 'it' : 'them'} on the Mobs tab too`);
+  }
+  // monsters made by hand: their files go in the customs folder as files of yours (under the next free number when one
+  // has theirs). One another takes its pictures from (info/link) comes first, so the one after points at where it is here.
   for (const m of [...z.mobs].reverse()) {
     const json = JSON.parse(text(m.files.find(([f]) => f.endsWith('.json'))[1])), link = Number(json?.info?.link);
     const shaped = (n) => { const t = moveMob(json, m.id, n); if (movedMob.has(link)) t.info.link = sameForm(json.info.link, movedMob.get(link)); return t; };

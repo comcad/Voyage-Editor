@@ -15,6 +15,7 @@ const TABS = [
   { id: 'maps', name: 'Maps', make: mapsTab },
   { id: 'items', name: 'Items', make: (el) => thingsTab(el, [['item', 'Items'], ['equip', 'Equips']], 'Find an item or an equip by its number or name to change its name, its stats or its icon, or make one of your own from a copy.') },
   { id: 'npcs', name: 'NPCs', make: (el) => thingsTab(el, [['npc', 'NPCs']], 'Find an NPC by its number or name to change it, or make one of your own from a copy or from a picture you brought in.') },
+  { id: 'mobs', name: 'Mobs', make: (el) => thingsTab(el, [['mob', 'Monsters']], 'Find a monster by its number or name to change its looks, its stats and what it drops, or make one of your own from a copy or from a picture you brought in.') },
   { id: 'quests', name: 'Quests', make: (el) => thingsTab(el, [['quest', 'Quests']], 'Find a quest by its number or name to change it, or make one of your own: what it says, which NPC gives it, what it needs and what it gives.') },
   { id: 'import', name: 'Import', make: importTab },
 ];

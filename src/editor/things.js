@@ -25,8 +25,8 @@ import { startEdit, remake, turns, pngOf, pixelEditor } from './picedit.js';
 import { compileDialogue, CHECKS, ACTS, outsOf } from './dialogue-script.js';
 import { exportThing, readThingZip, importThing } from './thingzip.js';
 
-const FAMILY = { equip: 'Character', item: 'Item', npc: 'Npc', quest: 'Quest' };
-const NAMES = { equip: 'Equip', item: 'Item', npc: 'NPC', quest: 'Quest' };
+const FAMILY = { equip: 'Character', item: 'Item', npc: 'Npc', quest: 'Quest', mob: 'Mob' };
+const NAMES = { equip: 'Equip', item: 'Item', npc: 'NPC', quest: 'Quest', mob: 'Monster' };
 /** A quest of your own to start from: the four parts the game keeps for one, each with its start (0) and its end (1). */
 const EMPTY_QUEST = () => ({ QuestInfo: { name: 'A new quest', 0: '', 1: '', 2: '' }, Check: { 0: { npc: 0, lvmin: 1 }, 1: { npc: 0 } }, Act: { 0: {}, 1: { exp: 0 } }, Say: { 0: { 0: '' }, 1: { 0: '' } } });
 const WORDS = { name: 'Name', desc: 'Description', func: 'Line under its name' };
@@ -37,6 +37,8 @@ const MORE = {
   item: ['price', 'slotMax', 'tradeBlock', 'only', 'quest', 'notSale', 'cash', 'timeLimited', 'success', 'cursed', 'incSTR', 'incDEX', 'incINT', 'incLUK', 'incPAD', 'incMAD', 'incPDD', 'incMDD', 'incACC', 'incEVA', 'incSpeed', 'incJump', 'incMHP', 'incMMP', 'reqLevel'],
   spec: ['hp', 'mp', 'hpR', 'mpR', 'time', 'pad', 'mad', 'pdd', 'mdd', 'acc', 'eva', 'speed', 'jump', 'moveTo', 'thaw', 'prob'],
   npc: [],
+  mob: ['level', 'maxHP', 'maxMP', 'exp', 'speed', 'flySpeed', 'PADamage', 'PDDamage', 'MADamage', 'MDDamage', 'acc', 'eva', 'pushed', 'bodyAttack', 'undead', 'boss', 'firstAttack', 'noFlip', 'hpRecovery', 'mpRecovery',
+    'explosiveReward', 'publicReward', 'invincible', 'fs', 'elemAttr', 'link'],
 };
 const HINTS = {
   reqLevel: 'The level needed to wear or use it.', reqJob: 'Which jobs may wear it (0: all).', reqSTR: 'STR needed.', reqDEX: 'DEX needed.', reqINT: 'INT needed.', reqLUK: 'LUK needed.',
@@ -56,10 +58,12 @@ const LABELS = {
   only: 'One of a kind', notSale: 'Can’t be sold', timeLimited: 'Has an expiry', knockback: 'Knockback chance', equipTradeBlock: 'Can’t be traded once worn', expireOnLogout: 'Gone on logging out',
   slotMax: 'Most in one slot', quest: 'Quest item', success: 'Works, % of the time', cursed: 'Destroys it, % of the time', hp: 'HP restored', mp: 'MP restored', hpR: 'HP restored (%)', mpR: 'MP restored (%)',
   time: 'Lasts (ms)', pad: 'Weapon attack', mad: 'Magic attack', pdd: 'Weapon defense', mdd: 'Magic defense', acc: 'Accuracy', eva: 'Avoidability', speed: 'Speed', jump: 'Jump', moveTo: 'Takes you to map',
-  thaw: 'Warms you up', prob: 'Chance (%)', islot: 'Where it is worn', vslot: 'What it covers', walk: 'Walk style', stand: 'Stand style', attack: 'Attack style', afterImage: 'Swing trail', sfx: 'Sound',
+  thaw: 'Warms you up', prob: 'Chance (%)', level: 'Level', maxHP: 'Max HP', maxMP: 'Max MP', exp: 'EXP it gives', flySpeed: 'Flying speed', PADamage: 'Weapon attack', PDDamage: 'Weapon defense',
+  MADamage: 'Magic attack', MDDamage: 'Magic defense', pushed: 'Damage that knocks it back', bodyAttack: 'Hurts on touch', undead: 'Undead', boss: 'A boss', firstAttack: 'Attacks first', noFlip: 'Never turns round',
+  hpRecovery: 'HP it gets back', mpRecovery: 'MP it gets back', explosiveReward: 'Drops scatter wide', publicReward: 'Drops are for everyone', invincible: 'Can’t be hurt', fs: 'Friction', elemAttr: 'Elements', link: 'Looks of monster', islot: 'Where it is worn', vslot: 'What it covers', walk: 'Walk style', stand: 'Stand style', attack: 'Attack style', afterImage: 'Swing trail', sfx: 'Sound',
 };
 /** Values that are yes (1) or no (0): a tick box. */
-const FLAGS = new Set(['cash', 'tradeBlock', 'only', 'notSale', 'timeLimited', 'equipTradeBlock', 'expireOnLogout', 'quest', 'accountSharable', 'tradeAvailable']);
+const FLAGS = new Set(['cash', 'tradeBlock', 'only', 'notSale', 'timeLimited', 'equipTradeBlock', 'expireOnLogout', 'quest', 'accountSharable', 'tradeAvailable', 'bodyAttack', 'undead', 'boss', 'firstAttack', 'noFlip', 'explosiveReward', 'publicReward', 'invincible']);
 const labelOf = (k) => h('span', null, LABELS[k] || k, LABELS[k] ? h('small', { class: 'key' }, ` ${k}`) : null);
 /** The poses a character takes, in a few words. */
 const POSES = {
@@ -69,6 +73,8 @@ const POSES = {
   swingTF: 'swing, two hands, final', swingP1: 'swing, polearm', swingP2: 'swing, polearm 2', swingPF: 'swing, polearm, final', stabO1: 'stab, one hand', stabO2: 'stab, one hand 2', stabOF: 'stab, one hand, final',
   stabT1: 'stab, two hands', stabT2: 'stab, two hands 2', stabTF: 'stab, two hands, final',
 };
+/** The poses a monster takes, in a few words. */
+const MOB_POSES = { stand: 'standing', move: 'walking', fly: 'flying', jump: 'jumping', hit1: 'hit', die1: 'dying', attack1: 'attack', attack2: 'attack 2', attack3: 'attack 3', skill1: 'skill', skill2: 'skill 2', regen: 'appearing', chase: 'chasing' };
 /** The points a part is joined to the character by. */
 const POINTS = ['navel', 'neck', 'hand', 'handMove', 'brow', 'earOverHead', 'earBelowHead'];
 const isCanvas = (v) => v !== null && typeof v === 'object' && typeof v._canvas === 'string';
@@ -180,6 +186,7 @@ const zLayers = () => (layers ??= fetch('/assets/Base/zmap.img.json').then((r) =
 /** What an equip or an NPC can be shown as. */
 const VIEWS = {
   equip: [['look', 'Board', 'How it is made: its stats, icon, looks and poses'], ['studio', 'Animate', 'Worn by a character, large: move, turn and paint its parts, live']],
+  mob: [['look', 'Looks', 'How it is made: its stats, drops and poses'], ['studio', 'Animate', 'Large and live: move, turn and paint its frames']],
   npc: [['look', 'Looks', 'How it is made: its settings, quests and poses'], ['studio', 'Animate', 'Large and live: move, turn and paint its frames'], ['dialogue', 'Dialogue', 'What it says and does when talked to']],
 };
 /** What a quest's start or end most often gives. */
@@ -200,7 +207,7 @@ function menuButton(label, rows) {
 }
 
 /** The tab each kind is edited on, and one to open there next (another tab asked: an NPC's quest, say). */
-const TAB_OF = { item: 'items', equip: 'items', npc: 'npcs', quest: 'quests' };
+const TAB_OF = { item: 'items', equip: 'items', npc: 'npcs', quest: 'quests', mob: 'mobs' };
 let pending = null;
 /** Opens a record on the tab for its kind (made when it is first opened, or open already). */
 function openOnTab(kind, id) {
@@ -244,7 +251,8 @@ export function thingsTab(host, kinds, blurb) {
     rec = next; picked = null; view = 'look'; board = null; spec = null;
     rec.layout = isObj(rec.layout) ? rec.layout : {};
     if (rec.kind === 'npc') rec.dialogue = isObj(rec.dialogue) && Array.isArray(rec.dialogue.nodes) ? rec.dialogue : { nodes: [{ id: 'start', type: 'start', x: 0, y: 0, data: {} }], wires: [] };
-    preview = rec.kind === 'equip' ? wornPreview() : rec.kind === 'npc' ? npcPreview() : null;
+    if (rec.kind === 'mob') rec.drops = Array.isArray(rec.drops) ? rec.drops : null;
+    preview = rec.kind === 'equip' ? wornPreview() : rec.kind === 'npc' || rec.kind === 'mob' ? npcPreview(FAMILY[rec.kind]) : null;
     npcQuests = null;
     if (rec.kind === 'npc') loadNpcQuests();
   }
@@ -276,7 +284,7 @@ export function thingsTab(host, kinds, blurb) {
     return { ...rec, tree };
   }
   const touch = () => { if (!changed) { changed = true; drawHead(); } soon(); };
-  const body = () => ({ tree: rec.tree, words: rec.words, folder: rec.folder, layout: rec.layout, dialogue: rec.dialogue });
+  const body = () => ({ tree: rec.tree, words: rec.words, folder: rec.folder, layout: rec.layout, dialogue: rec.dialogue, drops: rec.kind === 'mob' ? rec.drops : undefined });
 
   // ---------------------------------------------------------------- saving, publishing, zips
   async function save() { if (!(await flush())) return; try { rec.state = await api(`/c/${rec.kind}/${rec.id}`, { method: 'PUT', body: body() }); changed = false; drawHead(); lookup(find.value); toast('Saved as a draft.'); } catch (e) { toast(e.message, true); } }
@@ -371,31 +379,40 @@ export function thingsTab(host, kinds, blurb) {
     }, { wide: true });
   }
   const canvasOf = (k, p, origin) => ({ origin, _w: p.w, _h: p.h, _canvas: `_custom/${DIRS[k]}/${p.name}.png` });
+  /** A monster's frame of a picture: stood on the middle of its bottom edge, its body (lt to rb, what is hit) the whole picture. */
+  const mobFrame = (p, delay) => { const ox = Math.round(p.w / 2); return { ...canvasOf('mob', p, [ox, p.h]), delay, lt: [-ox, -p.h], rb: [p.w - ox, 0] }; };
+  /** A monster made of one picture: it stands, moves, is hit and dies in it, with the stats of a weak monster to change. */
+  const mobFromPicture = (p) => ({
+    info: { level: 1, maxHP: 10, maxMP: 0, exp: 3, speed: -50, PADamage: 10, PDDamage: 0, MADamage: 0, MDDamage: 0, acc: 10, eva: 0, pushed: 1, bodyAttack: 1, fs: 10 },
+    stand: { 0: mobFrame(p, 500) }, move: { 0: mobFrame(p, 200) }, hit1: { 0: mobFrame(p, 500) }, die1: { 0: mobFrame(p, 600) },
+  });
   function newOne() {
     if (!leave()) return;
     const k = kind, id = h('input', { type: 'number', required: true, min: 1 }), note = h('p', { class: 'error', role: 'alert' });
     let source = null, picture = null, empty = false;
     const from = h('button', { type: 'button', onclick: async () => { const r = await pickFromList(`A copy of which ${NAMES[k].toLowerCase()}?`, async (q) => (await api(`/c/${k}?q=${encodeURIComponent(q)}`)).map((x) => ({ id: x.id, label: `${x.name || '(no name)'}${x.sub ? `  (${x.sub})` : ''}`, sub: x.sub })));
       if (r) { source = r; picture = null; empty = false; from.textContent = `${r.id} ${r.label}`; if (pic) pic.textContent = k === 'quest' ? 'Start empty' : 'From a picture...'; } } }, 'A copy of...');
-    const pic = k === 'npc' ? h('button', { type: 'button', onclick: async () => { const p = await pickPicture('npc'); if (p) { picture = p; source = null; pic.textContent = `The picture ${p.name}`; from.textContent = 'A copy of...'; } } }, 'From a picture...')
+    const pic = k === 'npc' || k === 'mob' ? h('button', { type: 'button', onclick: async () => { const p = await pickPicture(k); if (p) { picture = p; source = null; pic.textContent = `The picture ${p.name}`; from.textContent = 'A copy of...'; } } }, 'From a picture...')
       : k === 'quest' ? h('button', { type: 'button', onclick: () => { empty = true; source = null; pic.textContent = 'Starting empty'; from.textContent = 'A copy of...'; } }, 'Start empty') : null;
     const range = k === 'quest' ? 'A quest’s number goes up to 32767 (the game keeps it in a small number); the game’s own stop at 29933, so 30000 and up are free. You are told if one is taken. A copy of a quest like the one you want is the easiest start: it has everything the game expects of one.'
       : k === 'npc' ? 'An NPC’s number has up to seven digits. Take one the game doesn’t use: you are told if it is taken.'
+      : k === 'mob' ? 'A monster’s number has six or seven digits (100000 and up). Take one the game doesn’t use: you are told if it is taken. A copy of a monster like the one you want is the easiest start: it has all its poses. One from a picture stands, moves, is hit and dies in that picture.'
       : k === 'equip' ? 'An equip’s number has seven digits and starts like the one it copies (a sword 130xxxx, a hat 100xxxx): the first three say what kind of equip it is.'
         : 'An item’s number has seven digits and starts with 2 (use), 3 (set-up), 4 (etc) or 5 (cash); its first three say which of the game’s files it joins.';
     dialog(`A new ${NAMES[k].toLowerCase()}`, (close) => h('form', { class: 'form', onsubmit: async (e) => {
       e.preventDefault();
       const n = Number(id.value);
       try {
-        if (!source && !picture && !empty) { note.textContent = k === 'npc' ? 'Say what it starts as: a copy of an NPC, or a picture.' : k === 'quest' ? 'Say what it starts as: a copy of a quest, or empty.' : 'Say which one it is a copy of.'; return; }
+        if (!source && !picture && !empty) { note.textContent = k === 'npc' || k === 'mob' ? `Say what it starts as: a copy of ${k === 'mob' ? 'a monster' : 'an NPC'}, or a picture.` : k === 'quest' ? 'Say what it starts as: a copy of a quest, or empty.' : 'Say which one it is a copy of.'; return; }
         const there = await api(`/c/${k}/${n}/state`);
         if (there.assets || there.draft || there.live) { note.textContent = `${NAMES[k]} ${n} is there already. Take a free number, or open that one to change it.`; return; }
         const fresh = { assets: false, draft: false, live: false };
         if (source) {
           const src2 = await api(`/c/${k}/${source.id}`);
           if (k === 'equip' && Math.floor(n / 10000) !== Math.floor(source.id / 10000)) { note.textContent = `Its number has to start with ${Math.floor(source.id / 10000)}, as the one it copies does.`; return; }
-          close({ id: n, kind: k, tree: src2.tree, words: { ...src2.words }, folder: src2.folder, layout: src2.layout, dialogue: src2.dialogue, state: fresh });
+          close({ id: n, kind: k, tree: src2.tree, words: { ...src2.words }, folder: src2.folder, layout: src2.layout, dialogue: src2.dialogue, drops: src2.drops ?? (k === 'mob' ? [] : undefined), state: fresh });
         } else if (empty) close({ id: n, kind: k, tree: EMPTY_QUEST(), words: {}, state: fresh });
+        else if (k === 'mob') close({ id: n, kind: k, tree: mobFromPicture(picture), words: { name: picture.name }, drops: [], state: fresh });
         else close({ id: n, kind: k, tree: { info: {}, stand: { 0: { ...canvasOf('npc', picture, [Math.round(picture.w / 2), picture.h]), z: 0, delay: 200 } } }, words: { name: picture.name, func: '' }, state: fresh });
       } catch (err) { note.textContent = err.message; }
     } }, h('label', null, 'Number', id), h('p', { class: 'muted' }, range), h('div', { class: 'side-buttons' }, from, pic), note,
@@ -486,7 +503,7 @@ export function thingsTab(host, kinds, blurb) {
   }
   const wordsPanel = () => h('div', { class: 'fields' }, Object.keys(rec.words || {}).map((w) => h('label', { class: 'word' }, WORDS[w] || w,
     w === 'desc' ? h('textarea', { rows: 3, value: rec.words[w], oninput: (e) => { rec.words[w] = e.target.value; touch(); } }) : h('input', { type: 'text', value: rec.words[w], maxLength: 100, oninput: (e) => { rec.words[w] = e.target.value; touch(); drawHead(); } }))),
-  rec.kind !== 'npc' && rec.kind !== 'quest' ? h('p', { class: 'muted' }, 'In a description, \\n starts a new line.') : null);
+  rec.kind === 'equip' || rec.kind === 'item' ? h('p', { class: 'muted' }, 'In a description, \\n starts a new line.') : null);
   const names = new Map();   // NPCs', items' and monsters' names by kind and number, as they are asked for
   /** A number of something (an NPC, an item, a monster, a quest, a map) with its name, and a button to pick another. */
   function pickRow(label, holder, key, what) {
@@ -639,10 +656,10 @@ export function thingsTab(host, kinds, blurb) {
         return true;
       },
       zLayers,
-      borrowed: () => (!equip && t.info?.link !== undefined && t.info.link !== '' && !posesOf(t).some((p) => numKeys(t[p]).length) ? `It takes its looks from NPC ${t.info.link} (info/link), so it has none of its own to change.` : null),
+      borrowed: () => (!equip && t.info?.link !== undefined && t.info.link !== '' && !posesOf(t).some((p) => numKeys(t[p]).length) ? `It takes its looks from ${rec.kind === 'mob' ? 'monster' : 'NPC'} ${t.info.link} (info/link), so it has none of its own to change.` : null),
       ownLooks: async () => {
         try {
-          const other = await api(`/c/npc/${Number(t.info.link)}`);
+          const other = await api(`/c/${rec.kind}/${Number(t.info.link)}`);
           for (const p of posesOf(other.tree)) t[p] = structuredClone(other.tree[p]);
           delete t.info.link;
           touch();
@@ -922,17 +939,112 @@ export function thingsTab(host, kinds, blurb) {
         if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
         if (id === 'info') return [h('h3', null, 'Settings'), fields(t.info, MORE.npc)];
         if (id === 'quests') return questsInspector();
-        const p = id.slice(5), frames = t[p], to = linkOf(t, p);
-        if (!frames) return [];
-        if (to) return [h('h3', null, p), preview?.el, h('p', null, `It is the same as ${to}.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
-        return [h('h3', null, p), preview?.el, animateButton(p), numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
-          isCanvas(frames[f]) ? h('label', { class: 'field' }, h('span', null, 'delay'), h('input', { type: 'number', value: frames[f].delay ?? 100, title: 'How long it shows, in milliseconds.', onchange: (e) => { frames[f].delay = Number(e.target.value) || 0; touch(); } })) : null,
-          h('div', { class: 'side-buttons' }, h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(frames[f]); touch(); side(); } }, 'Copy it'),
-            h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')))),
-        h('button', { type: 'button', onclick: async () => { const pic = await pickPicture('npc'); if (!pic) return; frames[nextKey(frames)] = { ...canvasOf('npc', pic, [Math.round(pic.w / 2), pic.h]), delay: 200 }; touch(); side(); } }, 'Add a frame from a picture...'),
-        h('p', { class: 'muted' }, 'An NPC stands on its point: the middle of the picture’s bottom edge for one you bring in.')];
+        return poseFrames(t, id.slice(5), 'npc', 'An NPC stands on its point: the middle of the picture’s bottom edge for one you bring in.');
       },
     };
+  }
+
+  /** A monster: it, its stats, its drops, its poses and their frames (one picture each, as an NPC's). */
+  function mobSpec() {
+    const t = rec.tree;
+    t.info ??= {};
+    const drops = () => rec.drops;
+    const types = {
+      mob: { label: 'Monster', color: '#c2410c', outs: () => [{ name: 'info', label: 'stats', kind: 'info' }, { name: 'drops', label: 'drops', kind: 'drops' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
+      info: { label: 'Stats', color: '#7a5af5', ins: [{ name: 'in', accepts: ['info'] }], body: () => {
+        const show2 = ['level', 'maxHP', 'exp', 'PADamage'].filter((k) => t.info[k] !== undefined);
+        return show2.length ? h('div', { class: 'nb-facts' }, show2.map((k) => h('span', null, `${LABELS[k] || k} ${t.info[k]}`))) : h('span', { class: 'muted' }, 'none');
+      } },
+      drops: { label: 'Drops', color: '#16a34a', ins: [{ name: 'in', accepts: ['drops'] }], body: () => {
+        const d = drops();
+        if (!d) return h('span', { class: 'muted' }, 'the game server’s own');
+        if (!d.length) return h('span', { class: 'muted' }, 'nothing');
+        return h('div', { class: 'nb-chips' }, d.slice(0, 6).map((x) => h('span', { class: 'nb-chip' }, `${x.item === 0 ? 'mesos' : (names.get(`item:${x.item}`) || x.item)} ${pct(x.chance)}`)), d.length > 6 ? h('span', { class: 'muted' }, `+${d.length - 6}`) : null);
+      } },
+      pose: { label: 'Pose', color: '#0e7490', deletable: true, ins: [{ name: 'in', accepts: ['pose'] }, { name: 'same', label: 'same as', accepts: ['frames'] }], outs: () => [{ name: 'frames', label: 'its frames', kind: 'frames' }],
+        body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t, n.data.pose, 'mob', 5); } },
+    };
+    const build = () => {
+      const nodes = [{ id: 'mob', type: 'mob', title: String(rec.id) }, { id: 'info', type: 'info' }, { id: 'drops', type: 'drops' }],
+        wires = [{ from: ['mob', 'info'], to: ['info', 'in'], fixed: true }, { from: ['mob', 'drops'], to: ['drops', 'in'], fixed: true }];
+      for (const p of posesOf(t)) { nodes.push({ id: `pose:${p}`, type: 'pose', title: `${p}${MOB_POSES[p] ? `  ${MOB_POSES[p]}` : ''}`, data: { pose: p } }); wires.push({ from: ['mob', 'poses'], to: [`pose:${p}`, 'in'], fixed: true }); }
+      for (const p of posesOf(t)) { const to = linkOf(t, p); if (to && t[to]) wires.push({ from: [`pose:${to}`, 'frames'], to: [`pose:${p}`, 'same'] }); }
+      return { nodes, wires };
+    };
+    return {
+      types, build, addable: [{ type: 'pose', label: 'A pose...' }],
+      connect(from, to) {
+        const a = from[0].slice(5), b = to[0].slice(5);
+        if (!t[a] || !t[b] || a === b || linkOf(t, a) === b) return false;
+        if (!linkOf(t, b) && numKeys(t[b]).length && !confirm(`${b} has frames of its own. Make it the same as ${a} instead?`)) return false;
+        t[b] = Object.fromEntries(numKeys(t[a]).map((f) => [f, { _uol: `../${a}/${f}` }]));
+        return true;
+      },
+      disconnect(w) { const b = w.to[0].slice(5); t[b] = ownFrames(t, b); return true; },
+      remove(id) { const p = id.slice(5); if (!confirm(`Take the pose ${p} off?`)) return false; for (const q of posesOf(t)) if (linkOf(t, q) === p) t[q] = ownFrames(t, q); delete t[p]; return true; },
+      async add() {
+        const choose = h('select', null, Object.entries(MOB_POSES).filter(([k]) => !t[k]).map(([k, words]) => h('option', { value: k }, `${k}  ${words}`)));
+        const p = await dialog('A new pose', (close) => h('form', { class: 'form', onsubmit: (e) => { e.preventDefault(); close(choose.value); } },
+          h('label', null, 'Pose', choose), h('p', { class: 'muted' }, 'A monster stands in stand and walks in move; hit1 and die1 play when it is hit and when it dies. It starts as a copy of stand.'),
+          h('div', { class: 'dialog-foot' }, h('button', { class: 'primary', type: 'submit' }, 'Add it'))));
+        if (!p) return null;
+        t[p] = t.stand ? structuredClone(ownFrames(t, 'stand')) : { 0: {} };
+        return `pose:${p}`;
+      },
+      inspect(id) {
+        if (!id || id === 'mob') return [h('h3', null, 'Monster'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(),
+          h('p', { class: 'muted' }, 'Its stats and its drops are boxes on the board. Put it on a map in the map editor (Add, then Monster...). Published, it is written into the customs folder, which the game server and the client read when they start.')];
+        if (id === 'info') return [h('h3', null, 'Stats'), fields(t.info, MORE.mob), h('p', { class: 'muted' }, 'Speed is how much slower (below 0) or faster than usual it walks. Knockback: the damage a hit needs to push it back.')];
+        if (id === 'drops') return dropsInspector();
+        return poseFrames(t, id.slice(5), 'mob', 'A monster stands on its point: the middle of the picture’s bottom edge for one you bring in. Its body, what is hit (lt to rb), is kept from the frame it replaces.');
+      },
+    };
+  }
+  const pct = (chance) => `${Math.round((chance / 10000) * 100) / 100}%`;
+  /** A monster's drops: the game server's own, or a list of its own (published into the customs folder, which the server reads in place of its own). */
+  function dropsInspector() {
+    const out = [h('h3', null, 'Drops')];
+    if (!Array.isArray(rec.drops)) {
+      return [...out, h('p', null, 'It drops what the game server has for it.'),
+        h('button', { type: 'button', class: 'primary', onclick: () => { rec.drops = []; touch(); showBoard(); side(); } }, 'Give it drops of its own'),
+        h('p', { class: 'muted' }, 'Drops of its own replace the server’s for this monster once it is published: they are written into the customs folder, and the game server reads them there.')];
+    }
+    out.push(h('p', { class: 'muted' }, 'What it can drop, each by its chance. Published, these are all it drops (the server reads them from the customs folder).'));
+    rec.drops.forEach((d, i) => {
+      const meso = d.item === 0;
+      const num = (label, key, title, lo = 0) => h('label', { class: 'field', title }, h('span', null, label), h('input', { type: 'number', min: lo, value: d[key] ?? '', onchange: (e) => { d[key] = Math.max(lo, Math.round(Number(e.target.value) || lo)); if (key === 'min' && d.max < d.min) d.max = d.min; touch(); showBoard(); } }));
+      out.push(h('div', { class: 'frame-card drop-card' },
+        meso ? h('div', { class: 'npc-row' }, h('strong', null, 'Mesos')) : pickRow('Item', d, 'item', 'item'),
+        h('label', { class: 'field', title: 'How often it drops: 100 always, 0.5 one time in two hundred.' }, h('span', null, 'Chance (%)'),
+          h('input', { type: 'number', min: 0.0001, max: 100, step: 'any', value: d.chance / 10000, onchange: (e) => { const v = Number(e.target.value); d.chance = Math.max(1, Math.min(1000000, Math.round((Number.isFinite(v) ? v : 0) * 10000))); touch(); showBoard(); } })),
+        num(meso ? 'Mesos, at least' : 'How many, at least', 'min', null, 1), num(meso ? 'Mesos, at most' : 'How many, at most', 'max', null, 1),
+        h('label', { class: 'field', title: 'Only dropped while this quest is under way (a quest item); 0 for any time.' }, h('span', null, 'Only for quest'), h('input', { type: 'number', min: 0, max: 32767, value: d.quest || 0, onchange: (e) => { d.quest = Math.max(0, Math.min(32767, Math.round(Number(e.target.value) || 0))); touch(); } })),
+        h('button', { type: 'button', class: 'quiet danger', onclick: () => { rec.drops.splice(i, 1); touch(); showBoard(); side(); } }, 'Take it off')));
+    });
+    out.push(h('div', { class: 'side-buttons' },
+      h('button', { type: 'button', onclick: async () => {
+        const r = await pickFromList('Which item?', async (q) => (await Promise.all(['item', 'equip'].map((k) => api(`/c/${k}?q=${encodeURIComponent(q)}`)))).flat().map((x) => ({ id: x.id, label: x.name || '(no name)' })));
+        if (!r) return;
+        names.set(`item:${r.id}`, r.label);
+        rec.drops.push({ item: r.id, chance: 100000, min: 1, max: 1, quest: 0 });
+        touch(); showBoard(); side();
+      } }, 'Add an item...'),
+      rec.drops.some((d) => d.item === 0) ? null : h('button', { type: 'button', onclick: () => { rec.drops.push({ item: 0, chance: 600000, min: 1, max: Math.max(1, Number(rec.tree.info?.level) * 3 || 10), quest: 0 }); touch(); showBoard(); side(); } }, 'Add mesos'),
+      h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (!rec.drops.length || confirm('Its drops of its own go: it drops what the game server has for it again. Go on?')) { rec.drops = null; touch(); showBoard(); side(); } } }, 'Back to the server’s own')));
+    return out;
+  }
+  /** A pose's frames (NPCs and monsters: one picture each), each with its delay. */
+  function poseFrames(t, p, k, note) {
+    const frames = t[p], to = linkOf(t, p);
+    if (!frames) return [];
+    if (to) return [h('h3', null, p), preview?.el, h('p', null, `It is the same as ${to}.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
+    const fresh = (pic) => (k === 'mob' ? mobFrame(pic, 200) : { ...canvasOf(k, pic, [Math.round(pic.w / 2), pic.h]), delay: 200 });
+    return [h('h3', null, `${p}${k === 'mob' && MOB_POSES[p] ? `  (${MOB_POSES[p]})` : ''}`), preview?.el, animateButton(p), numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
+      isCanvas(frames[f]) ? h('label', { class: 'field' }, h('span', null, 'Shows for (ms)'), h('input', { type: 'number', value: frames[f].delay ?? 100, title: 'How long it shows, in milliseconds.', onchange: (e) => { frames[f].delay = Number(e.target.value) || 0; touch(); } })) : null,
+      h('div', { class: 'side-buttons' }, h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(frames[f]); touch(); side(); } }, 'Copy it'),
+        h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')))),
+    h('button', { type: 'button', onclick: async () => { const pic = await pickPicture(k); if (!pic) return; frames[nextKey(frames)] = fresh(pic); touch(); side(); } }, 'Add a frame from a picture...'),
+    h('p', { class: 'muted' }, note)];
   }
 
   /** The quests an NPC gives and takes back: each to open, or to let go of; one to attach, or a new one made for it. */
@@ -1202,6 +1314,7 @@ export function thingsTab(host, kinds, blurb) {
   function makeSpec() {
     if (rec.kind === 'quest') return questSpec();
     if (rec.kind === 'npc') return view === 'dialogue' ? dialogueSpec() : npcLookSpec();
+    if (rec.kind === 'mob') return mobSpec();
     return thingSpec();
   }
   /** What the board shows now, laid out (from where nodes were put, or in columns). */

@@ -101,7 +101,7 @@ export function wornPreview() {
  * An NPC as players see it: the NPC being edited (changes not saved included) playing a pose you pick, its frames
  * one after another at their own delays. One that takes its looks from another (info/link) shows that one's.
  */
-export function npcPreview() {
+export function npcPreview(family = 'Npc') {
   shared();
   const canvas = h('canvas', { class: 'worn-canvas', width: W, height: H, 'aria-label': 'The NPC' });
   const pose = h('select', { 'aria-label': 'Pose' }), face = h('button', { type: 'button', title: 'Face the other way' }, 'Turn');
@@ -148,10 +148,10 @@ export function npcPreview() {
   /** Shows the NPC `rec` ({ tree }), in pose `want` when it has it. Only the newest call's NPC is drawn. */
   async function show(rec, want = null) {
     const mine = ++seq;
-    let next = prepare(structuredClone(rec.tree), 'Npc'), from = null;
+    let next = prepare(structuredClone(rec.tree), family), from = null;
     const link = next?.info?.link;
     if (link !== undefined && link !== null && link !== '') {
-      const other = await assets.json(`Npc/${String(link).padStart(7, '0')}.img`);
+      const other = await assets.json(`${family}/${String(link).padStart(7, '0')}.img`);
       if (other) { next = other; from = link; }
     }
     if (mine !== seq) return;
@@ -162,7 +162,7 @@ export function npcPreview() {
     fill(pose, poses.map((p) => h('option', { value: p }, p)));
     pose.value = action;
     if (frame >= shown().length) frame = 0;
-    note.textContent = from !== null ? `It takes its looks from NPC ${from} (info/link).` : poses.length ? '' : 'It has no pictures yet.';
+    note.textContent = from !== null ? `It takes its looks from ${family === 'Mob' ? 'monster' : 'NPC'} ${from} (info/link).` : poses.length ? '' : 'It has no pictures yet.';
     ready();
   }
   const stop = frames(el, tick);

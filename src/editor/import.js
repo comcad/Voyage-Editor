@@ -11,6 +11,7 @@ import { musicPanel } from './music.js';
 const KINDS = [
   ['map', 'Maps', 'Scenery for maps. In the map editor: Add, then Object or Background, and pick the set named custom.'],
   ['npc', 'NPCs', 'What an NPC of your own looks like: pick one with New... or Use a picture... on the NPCs tab.'],
+  ['mob', 'Mobs', 'What a monster of your own looks like: pick one with New... or Use a picture... on the Mobs tab.'],
   ['equip', 'Equips', 'Icons for equips, and how they look worn: pick one with Use a picture... on the Items tab, or in Animate. Pictures you paint or turn there are kept here too.'],
   ['item', 'Items', 'Icons for items: pick one with Use a picture... on the Items tab.'],
 ];

@@ -137,5 +137,5 @@ export function pickFromList(title, search, hint = 'number or name') {
 }
 
 /** The folder under custom/ each kind is kept in, and a picture's address there (any signed-in page can show it). */
-export const DIRS = { map: 'maps', npc: 'npcs', equip: 'equips', item: 'items' };
+export const DIRS = { map: 'maps', npc: 'npcs', equip: 'equips', item: 'items', mob: 'mobs' };
 export const pictureUrl = (kind, name, at = 0) => `/assets/Map/_custom/${DIRS[kind]}/${name}.png${at ? `?t=${at}` : ''}`;

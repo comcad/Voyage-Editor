@@ -64,6 +64,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 🧑 | **NPCs** | Its looks as a board (poses and their frames) beside a **preview** of it playing each pose, its **quests** (the ones it gives and takes back: open one, let it go, attach another or make a new one for it), and its **dialogue** as a board of lines, yes/no questions, choices, checks and actions, published as its script for Voyage-Server |
 | 🎬 | **Animate** | An equip worn by a character, or an NPC, large, in any pose and frame, playing or still: click a part and drag it into place, turn it about the point it is held by, flip it, paint its pixels or put it in another layer, and see it on the character as you go. **Save** makes what you changed pictures of yours; the game's own pictures are left as they are |
 | 🖌️ | **Paint** | **Paint...** on any picture (an icon, a frame): a pencil, an eraser, a colour picker, a fill, the picture's own colours, undo and redo |
+| 👾 | **Mobs** | A monster's stats (with plain names), its poses and their frames, a preview and Animate, and its **drops**: items and mesos, each with its chance, published into the `customs` folder where Voyage-Server reads them in place of its database's. Make one from a copy or from a picture |
 | 📜 | **Quests** | A quest as a flow, from the NPC that gives it to what finishing it gives, with the items to bring, monsters to hunt, quests needed and items given wired in; levels, EXP, mesos and fame in boxes of their own |
 | 📤 | **Zips everywhere** | **Export zip** and **Import zip...** for items, equips, NPCs (with their dialogue) and quests, as for maps; **Unpublish** takes anything back out of `customs` |
 | 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets. Music of your own (MP3) for maps |
@@ -182,7 +183,7 @@ map-990000001-My_Island.zip
 └── customs/Mob/9990001.img.json   # the monsters on it made as files of the customs folder: each one's file and pictures
 ```
 
-An NPC of yours is one the editor has (your draft, or the published one), or one made by hand in the `customs` folder, which goes as one of yours with its pictures among your NPC pictures. A monster of yours is one made by hand in the `customs` folder (the editor has no monster editor); one it takes its pictures from (`info/link`) goes with it. The game's own NPCs and monsters stay out: whoever imports the map has them.
+An NPC of yours is one the editor has (your draft, or the published one), or one made by hand in the `customs` folder, which goes as one of yours with its pictures among your NPC pictures. A monster of yours is one the editor has (its pictures going among your monster pictures, its drops with it), or one made by hand in the `customs` folder (its files go as they are); one it takes its pictures from (`info/link`) goes with it. The game's own NPCs and monsters stay out: whoever imports the map has them.
 
 **Import zip...** asks which map number to save it as (the number it was exported from, or any other), brings in its pictures and music, saves it and its NPCs as your drafts, puts its monsters in the `customs` folder with their names in `String/Mob.img`, and opens the map: check it, then publish it and the NPCs. A picture or track with the name of a different one already here comes in as `<name>_2`; an NPC or monster whose number a different one has comes in under the next free number; either way the map is made to use it. One that is the same is used as it is, so a zip imported twice brings nothing in twice. A map that led to its own number (its return map, a portal back to itself) leads to its new one. A window lists what came in under another number or name.
 
@@ -207,6 +208,7 @@ voyage-assets/
 - An item or a quest is put into the file the assets keep it in with its neighbours, and its name into the String file it belongs to.
 - Music you bring in is written at once as the music set `BgmCustom` (`Sound/BgmCustom.img`), so a map plays a track of yours as `BgmCustom/<name>`, the way it plays the game's `Bgm00/GoPicnic`. Players hear it once a map that plays it is published.
 - A published NPC's dialogue is written as its script, `scripts/npc/<number>.js`, which Voyage-Server runs in place of a script of its own for that NPC.
+- Published monsters' drops are written to `server/mob-drops.json`; Voyage-Server gives each monster listed there those drops in place of its database's (Voyage-Client never hands that folder out).
 - Every file is written whole, with everything published in it. **Unpublish** takes yours out again, and players get the assets' own.
 
 After **Publish** or **Unpublish**, restart Voyage-Server and Voyage-Client for the change to take effect: they read the `customs` folder as they start, and the editor reminds you each time.
@@ -240,7 +242,7 @@ Voyage-Editor/
 │   │   ├── picedit.js    # pictures changed in the editor: painted, turned, flipped and moved
 │   │   ├── preview.js    # an equip worn by a character (the client's character.js), and an NPC playing its poses
 │   │   ├── dialogue-script.js # an NPC's dialogue made into its script (also used by the server)
-│   │   ├── thingzip.js   # an item, equip, NPC or quest as a zip
+│   │   ├── thingzip.js   # an item, equip, NPC, monster or quest as a zip
 │   │   ├── import.js     # pictures and music of your own
 │   │   ├── music.js      # music for maps: the list, the preview, MP3s brought in
 │   │   ├── mapzip.js     # a map as a zip: export and import

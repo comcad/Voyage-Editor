@@ -283,3 +283,6 @@ export async function importMap(z, id) {
   await api(`/c/map/${id}`, { method: 'PUT', body: { tree, words: z.words } });
   return notes;
 }
+
+/** (also used for the zips of items, NPCs and quests) */
+export { placeFor, bytesOf };

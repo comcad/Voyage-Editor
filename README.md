@@ -60,9 +60,10 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | ✅ | **Checks** | Before publishing, a list of what would go wrong on the map (no ground, no place to arrive, something standing on nothing) |
 | ↩️ | **Undo** | Undo and redo every change, and drafts that only the editor sees until you publish |
 | 📦 | **Map zips** | **Export zip** saves a map with the pictures, music, NPCs and monsters of yours it uses; **Import zip...** opens one as your draft of any map number, bringing them in |
-| 🗡️ | **Items & equips** | An item's or an equip's name, description, stats and icon; one of your own from a copy |
-| 🧑 | **NPCs** | An NPC's name and pictures; one of your own from a copy or from a picture |
-| 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
+| 🗡️ | **Items & equips** | A board of nodes: the item, its stats, its icon, what using it does; an equip's worn look as one node for each pose, with each frame's parts (picture, point, layer, the points it is joined by) and a character wearing it, animating |
+| 🧑 | **NPCs** | Its looks as a board (poses and their frames), and its **dialogue** as a board of lines, yes/no questions, choices, checks and actions, published as its script for Voyage-Server |
+| 📜 | **Quests** | A quest as a flow, from the NPC that gives it to what finishing it gives, with the items to bring, monsters to hunt, quests needed and items given wired in |
+| 📤 | **Zips everywhere** | **Export zip** and **Import zip...** for items, equips, NPCs (with their dialogue) and quests, as for maps; **Unpublish** takes anything back out of `customs` |
 | 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets. Music of your own (MP3) for maps |
 
 ## 🧩 How It Works in a Browser
@@ -203,9 +204,10 @@ voyage-assets/
 - A map, an NPC or an equip is written as its whole file.
 - An item or a quest is put into the file the assets keep it in with its neighbours, and its name into the String file it belongs to.
 - Music you bring in is written at once as the music set `BgmCustom` (`Sound/BgmCustom.img`), so a map plays a track of yours as `BgmCustom/<name>`, the way it plays the game's `Bgm00/GoPicnic`. Players hear it once a map that plays it is published.
-- Every file is written whole, with everything published in it. **Stop publishing** takes yours out again, and players get the assets' own.
+- A published NPC's dialogue is written as its script, `scripts/npc/<number>.js`, which Voyage-Server runs in place of a script of its own for that NPC.
+- Every file is written whole, with everything published in it. **Unpublish** takes yours out again, and players get the assets' own.
 
-After **Publish** or **Stop publishing**, restart Voyage-Server and Voyage-Client for the change to take effect: they read the `customs` folder as they start, and the editor reminds you each time.
+After **Publish** or **Unpublish**, restart Voyage-Server and Voyage-Client for the change to take effect: they read the `customs` folder as they start, and the editor reminds you each time.
 
 The editor only ever takes out files it wrote itself (`data/customs-written.json` lists them). A file you put in `customs` by hand stays, and the editor builds on it: a String file of yours gets the names put into it. The assets folder itself is never written to.
 
@@ -230,7 +232,11 @@ Voyage-Editor/
 │   │   ├── maps.js       # the map editor's bar, panel and pickers
 │   │   ├── mapview.js    # the canvas: drawing, picking, dragging
 │   │   ├── mapdoc.js     # a map being edited: its tree, undo, checks
-│   │   ├── things.js     # items, equips, NPCs and quests
+│   │   ├── things.js     # items, equips, NPCs and quests, as boards of nodes
+│   │   ├── nodes.js      # the node board: dragging, wiring, panning, zooming
+│   │   ├── preview.js    # an equip worn by a character (the client's character.js)
+│   │   ├── dialogue-script.js # an NPC's dialogue made into its script (also used by the server)
+│   │   ├── thingzip.js   # an item, equip, NPC or quest as a zip
 │   │   ├── import.js     # pictures and music of your own
 │   │   ├── music.js      # music for maps: the list, the preview, MP3s brought in
 │   │   ├── mapzip.js     # a map as a zip: export and import

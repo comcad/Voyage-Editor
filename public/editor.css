@@ -296,3 +296,55 @@ textarea { border: 1px solid var(--border); background: var(--surface); border-r
 .track { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--grid); }
 .track:last-child { border-bottom: 0; }
 .track strong { overflow-wrap: anywhere; }
+/* the node boards (items, equips, NPCs, quests): the board, its nodes and wires, and what a node holds beside it */
+.thing-editor.nodes-editor { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 12px; align-items: stretch; height: calc(100vh - 150px); min-height: 440px; }
+.thing-board { min-width: 0; min-height: 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--plane); }
+.thing-inspect { overflow: auto; min-height: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: grid; gap: 10px; align-content: start; }
+.thing-inspect h3 { margin: 0; }
+.nb { position: relative; width: 100%; height: 100%; overflow: hidden; touch-action: none; cursor: grab; outline: none; background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
+.nb:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.nb-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.nb-wires { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.nb-wire { fill: none; stroke: var(--axis); stroke-width: 2; }
+.nb-wire.fixed { opacity: 0.55; }
+.nb-wire.on { stroke: var(--accent); stroke-width: 3; }
+.nb-wire.temp { stroke: var(--accent); stroke-dasharray: 5 4; }
+.nb-wire-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+.nb-wire-hit.fixed { pointer-events: none; }
+.nb-node { position: absolute; min-width: 170px; max-width: 250px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16); cursor: default; }
+.nb-node.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+.nb-head { display: flex; gap: 6px; align-items: baseline; padding: 5px 8px; border-radius: 7px 7px 0 0; background: color-mix(in srgb, var(--nb-color) 16%, transparent); border-bottom: 2px solid var(--nb-color); cursor: grab; user-select: none; touch-action: none; }
+.nb-kind { font-weight: 700; font-size: 12px; color: var(--nb-color); white-space: nowrap; }
+.nb-title { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nb-ports { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.nb-ins, .nb-outs { display: grid; gap: 3px; align-content: start; }
+.nb-row { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--ink-2); min-height: 14px; }
+.nb-row.out { justify-content: flex-end; }
+.nb-port { width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--nb-color); flex: none;  position: relative; }
+.nb-port::after { content: ""; position: absolute; inset: -9px; border-radius: 50%; }
+.nb-port.in { margin-left: -7px; }
+.nb-port.out { margin-right: -7px; cursor: crosshair; }
+.nb-port.can { background: var(--accent); border-color: var(--accent); }
+.nb-body { padding: 2px 8px 8px; font-size: 12px; display: grid; gap: 4px; }
+.nb-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nb-facts { display: flex; flex-wrap: wrap; gap: 2px 8px; color: var(--ink-2); }
+.nb-thumbs { display: flex; gap: 4px; flex-wrap: wrap; align-items: end; }
+.nb-thumbs img { max-width: 40px; max-height: 40px; image-rendering: pixelated; }
+.nb-icon { width: 32px; height: 32px; object-fit: contain; image-rendering: pixelated; }
+.nb-bar { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; align-items: center; z-index: 3; }
+.nb-zoom { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.nb-menu { position: absolute; z-index: 4; display: grid; min-width: 190px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); }
+.nb-menu button { text-align: left; border: 0; background: none; padding: 6px 8px; border-radius: 4px; }
+.nb-menu button:hover { background: var(--wash); }
+.nb-menu p { margin: 2px 8px 4px; font-size: 12px; }
+.frame-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: grid; gap: 8px; }
+.frame-head { display: flex; gap: 6px; align-items: center; }
+.frame-head strong { margin-right: auto; }
+.part { display: grid; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.worn { display: grid; gap: 6px; justify-items: start; }
+.worn-canvas { width: 240px; height: 220px; background: var(--plane); border: 1px solid var(--border); border-radius: 8px; image-rendering: pixelated; }
+.worn-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.worn-note:empty { display: none; }
+.pick-id { width: 110px; }
+pre.script { max-height: 60vh; overflow: auto; font: 12px/1.45 var(--mono); background: var(--plane); padding: 10px; border-radius: 6px; white-space: pre-wrap; margin: 0; }
+@media (max-width: 1000px) { .thing-editor.nodes-editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: 60vh auto; height: auto; } }

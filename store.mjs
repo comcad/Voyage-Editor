@@ -14,7 +14,8 @@
  *                                  BgmCustom, which a map plays as BgmCustom/<name>
  *     customs-written.json         the files of the customs folder the editor wrote
  *
- * A file here is { id, kind, words (its name and the like), tree (the same tree the assets keep for one), folder }.
+ * A file here is { id, kind, words (its name and the like), tree (the same tree the assets keep for one), folder, layout
+ * (where its nodes sit in the node editor), dialogue (an NPC's: the graph its script is made from) }.
  * A quest's tree has four parts, one for each of the game's files a quest is spread over: QuestInfo (its name and
  * what the quest window says), Check (what starting and finishing it take, and the NPC for each), Act (what it gives
  * and takes), Say (what the NPC says).
@@ -22,7 +23,8 @@
  * Publishing writes the assets' customs folder (assets/customs, laid out like the assets), which Voyage-Client and
  * Voyage-Server read in place of the assets' own files: a published map, NPC or equip as its whole file; a published
  * item or quest put into the file the assets keep it in with its neighbours; the names put into the String file they
- * belong to; the pictures where the trees that use them say they are; the music as Sound/BgmCustom.img. Every such file is written whole, with
+ * belong to; the pictures where the trees that use them say they are; the music as Sound/BgmCustom.img; a published
+ * NPC's dialogue as its script, scripts/npc/<number>.js (Voyage-Server reads it in place of its own). Every such file is written whole, with
  * everything published in it, and one nothing published accounts for any more is taken out again. The editor only
  * ever takes out files it wrote (customs-written.json lists them): a file you put in the customs folder yourself
  * stays, and the editor builds on it (a String file of yours gets the names put into it).
@@ -30,6 +32,7 @@
 import fs from 'fs';
 import path from 'path';
 import express from 'express';
+import { compileDialogue } from './src/editor/dialogue-script.js';
 
 const pad = (id, n) => String(id).padStart(n, '0');
 export const KINDS = {
@@ -187,7 +190,7 @@ export class CustomStore {
     const state = this.state(k, id);
     for (const [from, file] of [['draft', this.draftFile(k, id)], ['live', this.liveFile(k, id)]]) {
       const rec = state[from] ? readJson(file) : null;
-      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, state, from, savedAt: rec.savedAt };
+      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, layout: rec.layout || null, dialogue: rec.dialogue || null, state, from, savedAt: rec.savedAt };
     }
     const own = this.fromAssets(k, id);
     if (!own) throw bad(`There is no ${k} ${id}.`, 404);
@@ -201,7 +204,9 @@ export class CustomStore {
       folder = this.folderOf(id) || String(body.folder || '');
       if (!/^[A-Za-z]+$/.test(folder) || !fs.existsSync(path.join(this.assets, 'Character', folder))) throw bad('An equip of your own needs the kind it is (the folder of the one it was copied from).');
     }
-    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, savedAt: Date.now() }));
+    const plain = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : undefined);
+    const dialogue = k === 'npc' && plain(body.dialogue) && Array.isArray(body.dialogue.nodes) && Array.isArray(body.dialogue.wires) ? body.dialogue : undefined;
+    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, layout: plain(body.layout), dialogue, savedAt: Date.now() }));
     return this.state(k, id);
   }
   discard(k, id) { this.checkId(k, id); fs.rmSync(this.draftFile(k, id), { force: true }); return this.state(k, id); }
@@ -233,6 +238,12 @@ export class CustomStore {
       for (const p of this.pictures(k)) want.set(`${KINDS[k].family}/_custom/${KINDS[k].dir}/${p.name}.png`, { file: path.join(this.picDir(k), `${p.name}.png`) });
     }
     for (const set of ['Obj', 'Back']) { const tree = this.pictureSet(set); if (tree) want.set(`Map/${set}/${SET}.img.json`, JSON.stringify(tree)); }
+    // a published NPC's dialogue, as the script the game server runs for it
+    for (const t of pub.things) {
+      if (t.k !== 'npc') continue;
+      const rec = readJson(t.file), made = rec?.dialogue ? compileDialogue(rec.dialogue, t.id) : null;
+      if (made?.script) want.set(`scripts/npc/${t.id}.js`, made.script);
+    }
     // the music brought in, as a music set of the game's kind: its tracks, and the file listing them
     const tracks = this.tracks();
     for (const t of tracks) want.set(`Sound/${MUSIC}.img/${t.name}.mp3`, { file: path.join(this.musicDir(), `${t.name}.mp3`) });

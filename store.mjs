@@ -469,6 +469,65 @@ Object.assign(CustomStore.prototype, {
   },
 });
 
+// ---------------------------------------------------------------- monsters and NPCs made as files of the customs folder
+const LIFE = { npc: 'Npc', mob: 'Mob' };
+/** A monster's file or one of its pictures, as a map's zip brings them: Mob/<7 digits>.img.json, Mob/<7 digits>.img/.../x.png. */
+const MOB_FILE = /^Mob\/\d{7}\.img(?:\.json|(?:\/[A-Za-z0-9_-]+)+\.png)$/;
+Object.assign(CustomStore.prototype, {
+  /**
+   * A monster or an NPC by number: whether the assets have it, whether the editor has one of its own (NPCs), the files
+   * of the customs folder that make it (its file and its pictures; never ones the editor wrote), and its name.
+   */
+  life(kind, id) {
+    const family = LIFE[kind];
+    if (!family) throw bad('No such kind.', 404);
+    if (!Number.isInteger(id) || id < 0 || id > 9999999) throw bad('That is not a number.');
+    const rel = `${family}/${pad(id, 7)}.img`, files = [];
+    if (fs.existsSync(path.join(this.customs, `${rel}.json`)) && !this.written().has(`${rel}.json`)) {
+      files.push(`${rel}.json`);
+      const walk = (dir, at) => {
+        let list = [];
+        try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of list) {
+          const r = `${at}/${e.name}`;
+          if (e.isDirectory()) walk(path.join(dir, e.name), r); else if (e.name.endsWith('.png') && !this.written().has(r)) files.push(r);
+        }
+      };
+      walk(path.join(this.customs, rel), rel);
+    }
+    const n = this.string(family)?.[String(id)], st = kind === 'npc' ? this.state('npc', id) : null;
+    return {
+      assets: fs.existsSync(path.join(this.assets, `${rel}.json`)), own: !!st && (st.draft || st.live), files,
+      name: n && typeof n === 'object' ? { name: String(n.name ?? ''), ...(kind === 'npc' ? { func: String(n.func ?? '') } : {}) } : null,
+    };
+  },
+  /** Puts a monster's file or picture in the customs folder as one of yours (the editor never takes it out again). */
+  putMobFile(rel, buf) {
+    if (!MOB_FILE.test(rel)) throw bad('Only a monster’s file or one of its pictures is put in this way.');
+    if (this.written().has(rel)) throw bad('That is a file the editor wrote itself.');
+    if (rel.endsWith('.json')) {
+      let tree = null;
+      try { tree = JSON.parse(Buffer.isBuffer(buf) ? buf.toString('utf8') : ''); } catch { /* not JSON */ }
+      if (!tree || typeof tree !== 'object' || Array.isArray(tree)) throw bad('That is not a monster’s file.');
+    } else if (!pngSize(buf)) throw bad('That is not a PNG picture.');
+    writeFile(path.join(this.customs, rel), buf);
+  },
+  /** Puts monsters' names ({ id: { name } }) into String/Mob.img of the customs folder (made from the assets' when it has none). */
+  putMobNames(names) {
+    const rel = 'String/Mob.img';
+    if (this.written().has(`${rel}.json`)) throw bad('The editor wrote that file itself.');
+    const tree = structuredClone(this.baseJson(rel) || {});
+    let n = 0;
+    for (const [id, v] of Object.entries(names || {})) {
+      if (!/^\d{1,7}$/.test(id)) continue;
+      const key = String(Number(id));
+      tree[key] = { ...(tree[key] && typeof tree[key] === 'object' ? tree[key] : {}), name: String(v?.name ?? '').slice(0, 100) };
+      n++;
+    }
+    if (n) { writeFile(path.join(this.customs, `${rel}.json`), JSON.stringify(tree)); delete this.strings.Mob; }
+  },
+});
+
 /** A copy of `node` in which every link is replaced by a copy of what it leads to (`chain`: the nodes from the file's root down to it). */
 function inline(node, chain) {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return node;
@@ -523,6 +582,10 @@ export function customRoutes(api, guard, store) {
   api.get('/pictures/:kind', guard, wrap((req, res) => res.json(store.pictures(req.params.kind))));
   api.put('/pictures/:kind/:name', guard, express.raw({ type: 'image/png', limit: '12mb' }), wrap((req, res) => { res.json(store.addPicture(req.params.kind, req.params.name, req.body)); console.log(`picture ${req.params.name} brought in for ${KINDS[req.params.kind].dir}`); }));
   api.delete('/pictures/:kind/:name', guard, wrap((req, res) => { store.removePicture(req.params.kind, req.params.name); res.json({ ok: true }); }));
+  // monsters and NPCs made as files of the customs folder: what a map's zip takes and brings
+  api.get('/life/:kind/:id', guard, wrap((req, res) => { if (!/^\d{1,7}$/.test(req.params.id)) throw bad('That is not a number.'); res.json(store.life(req.params.kind, Number(req.params.id))); }));
+  api.put(/^\/customs\/(Mob\/.+)$/, guard, express.raw({ type: () => true, limit: '20mb' }), wrap((req, res) => { store.putMobFile(req.params[0], req.body); res.json({ ok: true }); }));
+  api.post('/strings/mob', guard, wrap((req, res) => { store.putMobNames(req.body); res.json({ ok: true }); }));
   // music for maps: the game's and your own; an MP3 brought in (its length, measured by the page, in ?ms)
   api.get('/music', guard, wrap((req, res) => res.json(store.music())));
   api.put('/music/:name', guard, express.raw({ type: 'audio/mpeg', limit: '40mb' }), wrap((req, res) => { res.json(store.addTrack(req.params.name, req.body, Number(req.query.ms))); console.log(`music ${req.params.name} brought in`); }));

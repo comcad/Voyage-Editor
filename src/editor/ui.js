@@ -96,6 +96,18 @@ export function dialog(title, build, { wide = false } = {}) {
   });
 }
 
+/**
+ * After publishing or no longer publishing: what changed is in the customs folder, and the game server and the client
+ * server read it as they start, so both are restarted for it to take effect. `done` says what happened.
+ */
+export function restartNotice(done) {
+  return dialog('Restart to see it in the game', (close) => [
+    h('p', null, done),
+    h('p', null, h('strong', null, 'Restart Voyage-Server and Voyage-Client'), ' for the change to take effect.'),
+    h('div', { class: 'dialog-foot' }, h('button', { type: 'button', class: 'primary', onclick: () => close(true) }, 'OK')),
+  ]);
+}
+
 /** Waits until nothing more has been typed for a moment before calling fn with the latest value. */
 export function settled(fn, ms = 220) {
   let timer = null;

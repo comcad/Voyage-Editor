@@ -5,7 +5,7 @@
  * quest window says, which NPC gives it and which takes it back, what it needs, what it gives, what is said. As with maps: Save keeps a draft only this page sees,
  * and Publish writes it into the assets' customs folder, which the client and the server both read.
  */
-import { h, fill, toast, dialog, settled, pickFromList, DIRS, pictureUrl } from './ui.js';
+import { h, fill, toast, dialog, settled, pickFromList, restartNotice, DIRS, pictureUrl } from './ui.js';
 import { api } from './api.js';
 
 const FAMILY = { equip: 'Character', item: 'Item', npc: 'Npc', quest: 'Quest' };
@@ -66,7 +66,7 @@ export function thingsTab(host, kinds, blurb) {
   async function publish() {
     try {
       rec.state = await api(`/c/${rec.kind}/${rec.id}/publish`, { method: 'POST', body: body() }); changed = false; drawHead(); lookup(find.value);
-      toast('Published to the customs folder. Players get it the next time they enter a map; restart the server for it to read it.');
+      restartNotice(`${NAMES[rec.kind]} ${rec.id} is published to the customs folder.`);
     } catch (e) { toast(e.message, true); }
   }
   async function discard() {
@@ -86,10 +86,10 @@ export function thingsTab(host, kinds, blurb) {
       if (!rec.state.draft && !changed) {
         const { kind: k, id } = rec, there = rec.state.assets;
         rec = null;
-        if (there) { await open(k, id); toast('No longer published. Players get the game’s own, which is what is open now.'); } else { draw(); lookup(find.value); toast('No longer published. Players no longer have it.'); }
+        if (there) { await open(k, id); restartNotice(`${NAMES[k]} ${id} is no longer published: players get the game’s own, which is what is open now.`); } else { draw(); lookup(find.value); restartNotice(`${NAMES[k]} ${id} is no longer published: players no longer have it.`); }
         return;
       }
-      drawHead(); lookup(find.value); toast('No longer published. Your draft is still open here: throw it away to see the game’s own.');
+      drawHead(); lookup(find.value); restartNotice(`${NAMES[rec.kind]} ${rec.id} is no longer published. Your draft is still open here: throw it away to see the game’s own.`);
     } catch (e) { toast(e.message, true); }
   }
 

@@ -4,7 +4,7 @@
  * read it in place of the assets' own. The canvas is mapview.js, the map itself mapdoc.js; this is the bar above
  * them, the panel beside them and the windows that pick things.
  */
-import { h, fill, toast, dialog, settled } from './ui.js';
+import { h, fill, toast, dialog, settled, restartNotice } from './ui.js';
 import { api } from './api.js';
 import { MapDoc, blankMap, KINDS, FIELDS, HINTS, PORTAL_TYPES, PORTAL_NOTES, NO_MAP, isWord } from './mapdoc.js';
 import { MapView } from './mapview.js';
@@ -90,7 +90,7 @@ export function mapsTab(host) {
     if (!doc || !(await check('Publish'))) return;
     try {
       state = await api(`/c/map/${doc.id}/publish`, { method: 'POST', body: body() }); doc.changed = false; refresh();
-      toast('Published to the customs folder. Players get it the next time they enter the map; restart the server for it to load the map again.');
+      restartNotice(`Map ${doc.id} is published to the customs folder.`);
     } catch (e) { toast(e.message, true); }
   }
   async function discard() {
@@ -105,10 +105,10 @@ export function mapsTab(host) {
       if (!state.draft && !doc.changed) {
         const id = doc.id;
         doc = null;
-        if (state.assets) { await openMap(id); toast('No longer published. Players get the map as the game has it, which is what is open now.'); } else { closeMap(); toast('No longer published. Players no longer have this map.'); }
+        if (state.assets) { await openMap(id); restartNotice(`Map ${id} is no longer published: players get the map as the game has it, which is what is open now.`); } else { closeMap(); restartNotice(`Map ${id} is no longer published: players no longer have it.`); }
         return;
       }
-      refresh(); toast('No longer published. Your draft is still open here: throw it away to see the map as the game has it.');
+      refresh(); restartNotice(`Map ${doc.id} is no longer published. Your draft is still open here: throw it away to see the map as the game has it.`);
     } catch (e) { toast(e.message, true); }
   }
   function closeMap() { preview.stop(); doc = null; canvas.hidden = true; side.hidden = true; empty.hidden = false; refresh(); }
@@ -140,7 +140,11 @@ export function mapsTab(host) {
         const notes = await importMap(z, id);
         if (doc) doc.changed = false;   // (leaving its changes was agreed to already)
         await openMap(id);
-        toast(`Imported as your draft of map ${id}${notes.length ? `. Note: ${notes.join('; ')}` : ''}. Publish it for players to get it.`);
+        dialog(`Imported as map ${id}`, (close) => [
+          h('p', null, `The map is your draft of map ${id}, open here. Publish it for players to get it.`),
+          notes.length ? h('ul', { class: 'problems' }, notes.map((n) => h('li', null, `${n[0].toUpperCase()}${n.slice(1)}.`))) : null,
+          h('div', { class: 'dialog-foot' }, h('button', { type: 'button', class: 'primary', onclick: () => close(true) }, 'OK')),
+        ]);
       } catch (e) { toast(`The map could not be imported: ${e.message}`, true); }
     } });
     input.click();

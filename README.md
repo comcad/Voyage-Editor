@@ -59,7 +59,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 🎵 | **Music** | A map's music: any of the game's tracks or one of your own, with a preview; **Import MP3...** brings a track in and sets it |
 | ✅ | **Checks** | Before publishing, a list of what would go wrong on the map (no ground, no place to arrive, something standing on nothing) |
 | ↩️ | **Undo** | Undo and redo every change, and drafts that only the editor sees until you publish |
-| 📦 | **Map zips** | **Export zip** saves a map with the pictures and music of yours it uses; **Import zip...** opens one as your draft of any map number, bringing them in |
+| 📦 | **Map zips** | **Export zip** saves a map with the pictures, music, NPCs and monsters of yours it uses; **Import zip...** opens one as your draft of any map number, bringing them in |
 | 🗡️ | **Items & equips** | An item's or an equip's name, description, stats and icon; one of your own from a copy |
 | 🧑 | **NPCs** | An NPC's name and pictures; one of your own from a copy or from a picture |
 | 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
@@ -172,12 +172,18 @@ Other `conf/*.conf` files are read too (each key in only one file), and `node se
 
 ```
 map-990000001-My_Island.zip
-├── map.json                  # the map, its street and map names, and which picture each background of yours is
-├── pictures/Palm.png         # the pictures of yours it uses (objects and backgrounds of the set custom)
-└── music/Theme.mp3           # its music, when it plays a track of yours
+├── map.json                       # the map, its names, which picture each background of yours is, its NPCs and monsters of yours
+├── pictures/Palm.png              # the pictures of yours it uses (objects and backgrounds of the set custom)
+├── music/Theme.mp3                # its music, when it plays a track of yours
+├── npc-pictures/Captain.png       # the pictures of the NPCs of yours on it
+└── customs/Mob/9990001.img.json   # the monsters on it made as files of the customs folder: each one's file and pictures
 ```
 
-**Import zip...** asks which map number to save it as (the number it was exported from, or any other), brings in its pictures and music, saves it as your draft of that number and opens it: check it and publish. A picture or track with the name of a different one already here comes in as `<name>_2`, and the map is made to use that; one that is the same is used as it is, so a zip imported twice brings nothing in twice. A map that led to its own number (its return map, a portal back to itself) leads to its new one.
+An NPC of yours is one the editor has (your draft, or the published one), or one made by hand in the `customs` folder, which goes as one of yours with its pictures among your NPC pictures. A monster of yours is one made by hand in the `customs` folder (the editor has no monster editor); one it takes its pictures from (`info/link`) goes with it. The game's own NPCs and monsters stay out: whoever imports the map has them.
+
+**Import zip...** asks which map number to save it as (the number it was exported from, or any other), brings in its pictures and music, saves it and its NPCs as your drafts, puts its monsters in the `customs` folder with their names in `String/Mob.img`, and opens the map: check it, then publish it and the NPCs. A picture or track with the name of a different one already here comes in as `<name>_2`; an NPC or monster whose number a different one has comes in under the next free number; either way the map is made to use it. One that is the same is used as it is, so a zip imported twice brings nothing in twice. A map that led to its own number (its return map, a portal back to itself) leads to its new one. A window lists what came in under another number or name.
+
+NPC scripts and monsters' drops are the game server's, not the map's: they don't go in the zip.
 
 ## 🗂️ Customs
 
@@ -199,7 +205,7 @@ voyage-assets/
 - Music you bring in is written at once as the music set `BgmCustom` (`Sound/BgmCustom.img`), so a map plays a track of yours as `BgmCustom/<name>`, the way it plays the game's `Bgm00/GoPicnic`. Players hear it once a map that plays it is published.
 - Every file is written whole, with everything published in it. **Stop publishing** takes yours out again, and players get the assets' own.
 
-Players get a changed file the next time they change maps (the client looks at `customs` again on its own); restart Voyage-Server for the game server to read the new files.
+After **Publish** or **Stop publishing**, restart Voyage-Server and Voyage-Client for the change to take effect: they read the `customs` folder as they start, and the editor reminds you each time.
 
 The editor only ever takes out files it wrote itself (`data/customs-written.json` lists them). A file you put in `customs` by hand stays, and the editor builds on it: a String file of yours gets the names put into it. The assets folder itself is never written to.
 

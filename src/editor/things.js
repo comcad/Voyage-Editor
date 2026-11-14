@@ -17,9 +17,11 @@
  * client and the server read) and Unpublish takes it out again. Export zip and Import zip carry one to another editor.
  */
 import { h, fill, toast, dialog, settled, pickFromList, restartNotice, DIRS, pictureUrl } from './ui.js';
-import { api } from './api.js';
+import { api, sendPicture } from './api.js';
 import { nodeBoard, arrange } from './nodes.js';
-import { wornPreview, npcPreview } from './preview.js';
+import { wornPreview, npcPreview, putLive } from './preview.js';
+import { studio as studioView } from './studio.js';
+import { startEdit, remake, turns, pngOf, pixelEditor } from './picedit.js';
 import { compileDialogue, CHECKS, ACTS, outsOf } from './dialogue-script.js';
 import { exportThing, readThingZip, importThing } from './thingzip.js';
 
@@ -46,6 +48,19 @@ const HINTS = {
   pad: 'Weapon attack while it lasts.', mad: 'Magic attack while it lasts.', pdd: 'Weapon defense while it lasts.', mdd: 'Magic defense while it lasts.', acc: 'Accuracy while it lasts.', eva: 'Avoidability while it lasts.',
   speed: 'Speed while it lasts.', jump: 'Jump while it lasts.', moveTo: 'The map it takes you to.',
 };
+/** What a value is called here (its own name, the game's, is shown small beside it). */
+const LABELS = {
+  reqLevel: 'Level needed', reqJob: 'Jobs that can use it', reqSTR: 'STR needed', reqDEX: 'DEX needed', reqINT: 'INT needed', reqLUK: 'LUK needed', reqPOP: 'Fame needed',
+  incSTR: 'STR', incDEX: 'DEX', incINT: 'INT', incLUK: 'LUK', incPAD: 'Weapon attack', incMAD: 'Magic attack', incPDD: 'Weapon defense', incMDD: 'Magic defense', incACC: 'Accuracy', incEVA: 'Avoidability',
+  incSpeed: 'Speed', incJump: 'Jump', incMHP: 'Max HP', incMMP: 'Max MP', tuc: 'Upgrade slots', price: 'Sells for', cash: 'Cash item', attackSpeed: 'Attack speed', tradeBlock: 'Can’t be traded',
+  only: 'One of a kind', notSale: 'Can’t be sold', timeLimited: 'Has an expiry', knockback: 'Knockback chance', equipTradeBlock: 'Can’t be traded once worn', expireOnLogout: 'Gone on logging out',
+  slotMax: 'Most in one slot', quest: 'Quest item', success: 'Works, % of the time', cursed: 'Destroys it, % of the time', hp: 'HP restored', mp: 'MP restored', hpR: 'HP restored (%)', mpR: 'MP restored (%)',
+  time: 'Lasts (ms)', pad: 'Weapon attack', mad: 'Magic attack', pdd: 'Weapon defense', mdd: 'Magic defense', acc: 'Accuracy', eva: 'Avoidability', speed: 'Speed', jump: 'Jump', moveTo: 'Takes you to map',
+  thaw: 'Warms you up', prob: 'Chance (%)', islot: 'Where it is worn', vslot: 'What it covers', walk: 'Walk style', stand: 'Stand style', attack: 'Attack style', afterImage: 'Swing trail', sfx: 'Sound',
+};
+/** Values that are yes (1) or no (0): a tick box. */
+const FLAGS = new Set(['cash', 'tradeBlock', 'only', 'notSale', 'timeLimited', 'equipTradeBlock', 'expireOnLogout', 'quest', 'accountSharable', 'tradeAvailable']);
+const labelOf = (k) => h('span', null, LABELS[k] || k, LABELS[k] ? h('small', { class: 'key' }, ` ${k}`) : null);
 /** The poses a character takes, in a few words. */
 const POSES = {
   stand1: 'standing', stand2: 'standing, two hands', walk1: 'walking', walk2: 'walking, two hands', alert: 'on guard', jump: 'jumping', prone: 'lying down', proneStab: 'attacking lying down',
@@ -162,6 +177,19 @@ const src = (kind, c) => `/assets/${FAMILY[kind]}/${c._canvas}`;
 let layers = null;
 const zLayers = () => (layers ??= fetch('/assets/Base/zmap.img.json').then((r) => r.json()).then((z) => Object.keys(z).filter((k) => !k.startsWith('_'))).catch(() => []));
 
+/** What an equip or an NPC can be shown as. */
+const VIEWS = {
+  equip: [['look', 'Board', 'How it is made: its stats, icon, looks and poses'], ['studio', 'Animate', 'Worn by a character, large: move, turn and paint its parts, live']],
+  npc: [['look', 'Looks', 'How it is made: its settings, quests and poses'], ['studio', 'Animate', 'Large and live: move, turn and paint its frames'], ['dialogue', 'Dialogue', 'What it says and does when talked to']],
+};
+/** What a quest's start or end most often gives. */
+const GIVES = [['exp', 'EXP'], ['money', 'Mesos (below 0 takes)'], ['pop', 'Fame']];
+/** The three steps, for a tab with nothing open. */
+const HOW = () => h('ol', { class: 'how' },
+  h('li', null, h('strong', null, 'Find one'), ' by its number or name on the left, or make one with New...'),
+  h('li', null, h('strong', null, 'Change it'), ': pick a box on its board, or open Animate to move, turn and paint its pictures on the character, live.'),
+  h('li', null, h('strong', null, 'Save'), ' keeps it as your draft; ', h('strong', null, 'Publish'), ' puts it in the game (after a restart).'));
+
 /** The tab each kind is edited on, and one to open there next (another tab asked: an NPC's quest, say). */
 const TAB_OF = { item: 'items', equip: 'items', npc: 'npcs', quest: 'quests' };
 let pending = null;
@@ -176,7 +204,8 @@ const savedElsewhere = (kind, id) => window.dispatchEvent(new CustomEvent('voyag
 
 /** `kinds`: the kinds this tab works on ([['item', 'Items'], ['equip', 'Equips']]); `blurb`: a line about them. */
 export function thingsTab(host, kinds, blurb) {
-  let kind = kinds[0][0], rec = null, changed = false, view = 'look', picked = null, board = null, spec = null, preview = null, npcQuests = null;
+  let kind = kinds[0][0], rec = null, changed = false, view = 'look', picked = null, board = null, spec = null, preview = null, npcQuests = null, anim = null, animPose = null;
+  const edits = new Map();   // pictures being changed (picedit.js) by their node, until Save makes them pictures of yours
   const list = h('div', { class: 'thing-list' }), editor = h('div', { class: 'thing-editor nodes-editor' });
   const inspect = h('aside', { class: 'thing-inspect' });
 
@@ -202,6 +231,7 @@ export function thingsTab(host, kinds, blurb) {
   }
   /** Puts a record in the editor: a new board for it. */
   function show(next) {
+    preview?.stop?.(); anim?.stop(); anim = null; animPose = null; edits.clear();
     rec = next; picked = null; view = 'look'; board = null; spec = null;
     rec.layout = isObj(rec.layout) ? rec.layout : {};
     if (rec.kind === 'npc') rec.dialogue = isObj(rec.dialogue) && Array.isArray(rec.dialogue.nodes) ? rec.dialogue : { nodes: [{ id: 'start', type: 'start', x: 0, y: 0, data: {} }], wires: [] };
@@ -214,17 +244,39 @@ export function thingsTab(host, kinds, blurb) {
     const id = rec.id;
     api(`/npc-quests/${id}`).then((list2) => { if (rec?.id === id && rec.kind === 'npc') { npcQuests = list2; if (board && view === 'look') { showBoard(); if (picked === 'quests') side(); } } }, (e) => toast(e.message, true));
   }
-  const soon = settled(() => { if (board && spec) { showBoard(); if (preview && rec) preview.show(rec, posePicked()); } }, 450);
+  const soon = settled(() => { if (board && spec) { showBoard(); if (preview && rec) preview.show(shownRec(), posePicked()); } }, 450);
+  /** The record as it looks now, for a preview: a copy whose changed pictures are drawn as they are now (edits). */
+  function shownRec() {
+    if (!edits.size) return rec;
+    const tree = structuredClone(rec.tree), wz = FAMILY[rec.kind];
+    const walk = (a, b, path) => {
+      for (const k of Object.keys(a)) {
+        const v = a[k];
+        if (!v || typeof v !== 'object' || !b?.[k]) continue;
+        if (!isCanvas(v)) { walk(v, b[k], `${path}${k}/`); continue; }
+        const live = edits.get(v)?.live;
+        if (!live) continue;
+        const key = `_live/${rec.id}/${path}${k}`;
+        putLive(`${wz}/${key}`, live.canvas);
+        Object.assign(b[k], { _canvas: key, _w: live.w, _h: live.h, origin: [...live.origin] });
+        if (live.map) b[k].map = structuredClone(live.map);
+        delete b[k]._at;
+      }
+    };
+    walk(rec.tree, tree, '');
+    return { ...rec, tree };
+  }
   const touch = () => { if (!changed) { changed = true; drawHead(); } soon(); };
   const body = () => ({ tree: rec.tree, words: rec.words, folder: rec.folder, layout: rec.layout, dialogue: rec.dialogue });
 
   // ---------------------------------------------------------------- saving, publishing, zips
-  async function save() { try { rec.state = await api(`/c/${rec.kind}/${rec.id}`, { method: 'PUT', body: body() }); changed = false; drawHead(); lookup(find.value); toast('Saved as a draft.'); } catch (e) { toast(e.message, true); } }
+  async function save() { if (!(await flush())) return; try { rec.state = await api(`/c/${rec.kind}/${rec.id}`, { method: 'PUT', body: body() }); changed = false; drawHead(); lookup(find.value); toast('Saved as a draft.'); } catch (e) { toast(e.message, true); } }
   async function publish() {
     if (rec.kind === 'npc') {
       const made = compileDialogue(rec.dialogue, rec.id);
       if (made.problems.length && made.script && !confirm(`Its dialogue has problems:\n\n${made.problems.join('\n')}\n\nPublish anyway?`)) return;
     }
+    if (!(await flush())) return;
     try {
       rec.state = await api(`/c/${rec.kind}/${rec.id}/publish`, { method: 'POST', body: body() }); changed = false; drawHead(); lookup(find.value);
       restartNotice(`${NAMES[rec.kind]} ${rec.id} is published to the customs folder${rec.kind === 'npc' && compileDialogue(rec.dialogue, rec.id).script ? ', with its dialogue as its script (customs/scripts/npc)' : ''}.`);
@@ -255,6 +307,7 @@ export function thingsTab(host, kinds, blurb) {
     } catch (e) { toast(e.message, true); }
   }
   async function exportZip() {
+    if (!(await flush())) return;
     try { const missing = await exportThing(rec); toast(missing.length ? `Exported, but without ${missing.join(', ')}: not found here.` : 'Exported, with the pictures of yours it uses.', missing.length > 0); } catch (e) { toast(`It could not be exported: ${e.message}`, true); }
   }
   function importZip() {
@@ -347,8 +400,8 @@ export function thingsTab(host, kinds, blurb) {
     fill(head, h('h2', null, `${NAMES[rec.kind]} ${rec.id}${rec.kind === 'quest' && rec.tree?.QuestInfo?.name ? `: ${rec.tree.QuestInfo.name}` : rec.words?.name ? `: ${rec.words.name}` : ''}`),
       h('span', { class: `chip${changed ? ' warn' : ''}` }, changed ? 'changes not saved' : rec.state.draft ? 'draft saved' : 'as it was opened'),
       h('span', { class: `chip${rec.state.live ? ' on' : ''}` }, rec.state.live ? 'published' : rec.state.assets ? 'players get the game’s own' : 'not published'),
-      rec.kind === 'npc' ? h('div', { class: 'segmented', role: 'group', 'aria-label': 'Which board' }, [['look', 'Looks'], ['dialogue', 'Dialogue']].map(([v, name]) => h('button', {
-        type: 'button', class: v === view ? 'on' : null, 'aria-pressed': v === view, onclick: () => { if (view !== v) { view = v; picked = null; board = null; draw(); } } }, name))) : null,
+      VIEWS[rec.kind] ? h('div', { class: 'segmented', role: 'group', 'aria-label': 'What to show' }, VIEWS[rec.kind].map(([v, name, title]) => h('button', {
+        type: 'button', class: v === view ? 'on' : null, 'aria-pressed': v === view, title, onclick: () => { if (view !== v) { view = v; picked = null; board = null; draw(); } } }, name))) : null,
       h('span', { class: 'spacer' }),
       h('button', { type: 'button', class: 'primary', onclick: save }, 'Save'), h('button', { type: 'button', onclick: publish, title: 'Write it into the customs folder for the client and the server' }, 'Publish'),
       h('button', { type: 'button', onclick: unpublish, disabled: !rec.state.live, title: rec.state.live ? 'Take it out of the customs folder again' : 'It isn’t published' }, 'Unpublish'),
@@ -362,34 +415,37 @@ export function thingsTab(host, kinds, blurb) {
     const rows = [];
     for (const [k, v] of Object.entries(node)) {
       if (k.startsWith('_') || (v !== null && typeof v === 'object')) continue;
-      const input = typeof v === 'number'
-        ? h('input', { type: 'number', step: 'any', value: v, onchange: (e) => { const n = Number(e.target.value); if (e.target.value !== '' && Number.isFinite(n)) { node[k] = n; touch(); } else e.target.value = node[k]; } })
-        : h('input', { type: 'text', value: v, onchange: (e) => { node[k] = e.target.value; touch(); } });
-      rows.push(h('label', { class: 'field', title: HINTS[k] || null }, h('span', null, k), input,
+      const input = FLAGS.has(k) && (v === 0 || v === 1) ? h('input', { type: 'checkbox', checked: v === 1, onchange: (e) => { node[k] = e.target.checked ? 1 : 0; touch(); } })
+        : typeof v === 'number'
+          ? h('input', { type: 'number', step: 'any', value: v, onchange: (e) => { const n = Number(e.target.value); if (e.target.value !== '' && Number.isFinite(n)) { node[k] = n; touch(); } else e.target.value = node[k]; } })
+          : h('input', { type: 'text', value: v, onchange: (e) => { node[k] = e.target.value; touch(); } });
+      rows.push(h('label', { class: 'field', title: HINTS[k] || null }, labelOf(k), input,
         h('button', { type: 'button', class: 'quiet', title: `Take ${k} off`, 'aria-label': `Take ${k} off`, onclick: () => { delete node[k]; touch(); side(); } }, '×')));
     }
     const left = more.filter((k) => !(k in node));
     const adder = left.length ? h('select', { class: 'adder', 'aria-label': 'Add a field', onchange: (e) => { if (!e.target.value) return; node[e.target.value] = 0; touch(); side(); } },
-      h('option', { value: '' }, 'Add a field...'), left.map((k) => h('option', { value: k }, `${k}${HINTS[k] ? `  (${HINTS[k]})` : ''}`))) : null;
-    const custom = h('input', { type: 'text', placeholder: 'another field’s name', class: 'adder' });
+      h('option', { value: '' }, 'Add a value...'), left.map((k) => h('option', { value: k }, LABELS[k] ? `${LABELS[k]}  (${k})` : `${k}${HINTS[k] ? `  (${HINTS[k]})` : ''}`))) : null;
+    const custom = h('input', { type: 'text', placeholder: 'or one by the game’s name', class: 'adder' });
     return h('div', { class: 'fields' }, rows, adder,
       h('form', { class: 'adder-row', onsubmit: (e) => { e.preventDefault(); const k = custom.value.trim(); if (/^[A-Za-z][A-Za-z0-9_]*$/.test(k) && !(k in node)) { node[k] = 0; touch(); side(); } } }, custom, h('button', { type: 'submit' }, 'Add')));
   }
   /** One picture: what it shows, where its point is, and a button to put one of yours in its place. */
   function pictureRow(holder, key, label, origin) {
     const node = holder[key], linked = node && typeof node._uol === 'string';
-    const show2 = isCanvas(node) ? h('img', { alt: '', src: src(rec.kind, node) }) : h('span', { class: 'muted' }, linked ? 'the same as another' : 'none');
+    const show2 = isCanvas(node) ? h('img', { alt: '', src: picSrc(node) }) : h('span', { class: 'muted' }, linked ? 'the same as another' : 'none');
     const point = isCanvas(node) ? ['x', 'y'].map((axis, i) => h('label', { class: 'mini' }, axis, h('input', { type: 'number', value: node.origin?.[i] ?? 0, title: 'Where its point is in the picture (what is put at its place).',
       onchange: (e) => { node.origin = [...(node.origin || [0, 0])]; node.origin[i] = Number(e.target.value) || 0; touch(); } }))) : null;
     return h('div', { class: 'pic-row' }, h('div', { class: 'pic-frame small' }, show2), h('div', { class: 'pic-what' }, h('strong', null, label),
       isCanvas(node) ? h('span', { class: 'muted' }, `${node._w} × ${node._h}`) : null, h('div', { class: 'pic-point' }, point)),
-    h('button', { type: 'button', onclick: async () => {
-      const p = await pickPicture(rec.kind);
-      if (!p) return;
-      const keep = isCanvas(node) ? Object.fromEntries(Object.entries(node).filter(([k]) => !['origin', '_w', '_h', '_canvas', '_at'].includes(k))) : {};
-      holder[key] = { ...keep, ...canvasOf(rec.kind, p, origin(p)) };
-      touch(); side();
-    } }, 'Use a picture...'));
+    h('div', { class: 'pic-buttons' }, isCanvas(node) ? h('button', { type: 'button', title: 'Paint on its pixels', onclick: () => paintDialog(node) }, 'Paint...') : null,
+      h('button', { type: 'button', onclick: async () => {
+        const p = await pickPicture(rec.kind);
+        if (!p) return;
+        const keep = isCanvas(node) ? Object.fromEntries(Object.entries(node).filter(([k]) => !['origin', '_w', '_h', '_canvas', '_at'].includes(k))) : {};
+        if (isCanvas(node)) edits.delete(node);
+        holder[key] = { ...keep, ...canvasOf(rec.kind, p, origin(p)) };
+        touch(); side();
+      } }, 'Use a picture...')));
   }
   /** A node of any shape: its values to change, its groups to open, and more to add (`skip`: its keys shown elsewhere). */
   function tree(node, depth = 0, skip = []) {
@@ -431,6 +487,176 @@ export function thingsTab(host, kinds, blurb) {
       searches[what] ? h('button', { type: 'button', onclick: async () => { const r = await pickFromList(`Which ${what === 'mob' ? 'monster' : what === 'npc' ? 'NPC' : what}?`, async (q) => (await searches[what](q)).map((x) => ({ id: x.id, label: x.name || x.sub || '(no name)' }))); if (r) { holder[key] = r.id; names.set(`${what}:${r.id}`, r.label); touch(); side(); } } }, 'Pick...') : null);
   }
 
+  /** Labelled number boxes for a few of a node's values (an empty box: it hasn't that value). */
+  function numRows(node, rows) {
+    return h('div', { class: 'fields' }, rows.map(([k, label, hint]) => h('label', { class: 'field', title: hint || null }, h('span', null, label, h('small', { class: 'key' }, ` ${k}`)),
+      h('input', { type: 'number', step: 'any', value: node[k] ?? '', placeholder: 'none', onchange: (e) => { if (e.target.value === '') delete node[k]; else { const n = Number(e.target.value); if (Number.isFinite(n)) node[k] = n; else e.target.value = node[k] ?? ''; } touch(); } }))));
+  }
+  /** A button that opens the Animate view (on pose `pose`, or the first one). */
+  const animateButton = (pose, label = 'Animate this pose') => h('button', { type: 'button', class: 'primary animate-btn', title: 'Large and live: move, turn and paint its parts', onclick: () => { animPose = pose; view = 'studio'; picked = null; board = null; draw(); } }, label);
+
+  // ---------------------------------------------------------------- pictures changed here (picedit.js), kept until Save
+  const picName = (c) => /^_custom\/[a-z]+\/([A-Za-z0-9][A-Za-z0-9_-]{0,39})\.png$/.exec(c || '')?.[1] || null;
+  const starting = new Map();
+  /** A picture's edit, started (its pixels read) the first time it is changed. */
+  function editFor(node) {
+    if (edits.has(node)) return Promise.resolve(edits.get(node));
+    if (!starting.has(node)) {
+      const r = rec, saved = isObj(rec.layout.pics) ? rec.layout.pics[picName(node._canvas)] : null;
+      starting.set(node, startEdit(node, src(rec.kind, node), saved ? { ...saved, url: `/assets/${FAMILY[rec.kind]}/${saved.from}` } : null).then((ed) => {
+        starting.delete(node);
+        remake(ed);
+        if (rec === r) edits.set(node, ed);
+        return ed;
+      }, (e) => { starting.delete(node); toast(`That picture can’t be changed here: ${e.message}`, true); throw e; }));
+    }
+    return starting.get(node);
+  }
+  const shots = new WeakMap();
+  /** A picture's address for an <img>: as it is now, edits and all. */
+  function picSrc(node) {
+    const ed = edits.get(node);
+    if (!ed?.live) return src(rec.kind, node);
+    let s = shots.get(ed);
+    if (!s || s.v !== ed.v) { s = { v: ed.v, url: ed.live.canvas.toDataURL() }; shots.set(ed, s); }
+    return s.url;
+  }
+  let made = 0;
+  const freshName = () => `${rec.id}-${Date.now().toString(36)}${(made++).toString(36)}`;
+  /**
+   * Every picture changed here made a picture of yours (sent to the editor's server) and put in its place: one turned
+   * or flipped keeps, with the draft, the picture it was made from, so turning it again starts from that.
+   */
+  async function flushOne(node) {
+    const ed = edits.get(node);
+    if (!ed) return;
+    const live = ed.live || remake(ed), dir = DIRS[rec.kind], turned = turns(ed.e);
+    let at = ed.base.canvas;
+    if (ed.painted || turned) {
+      const name = freshName();
+      await sendPicture(`/pictures/${rec.kind}/${name}`, await pngOf(live.canvas));
+      at = `_custom/${dir}/${name}.png`;
+      if (turned) {
+        let from = ed.base.canvas;
+        if (ed.painted) { const b = freshName(); await sendPicture(`/pictures/${rec.kind}/${b}`, await pngOf(ed.pixels)); from = `_custom/${dir}/${b}.png`; }
+        rec.layout.pics = isObj(rec.layout.pics) ? rec.layout.pics : {};
+        rec.layout.pics[name] = { from, origin: ed.base.origin, map: ed.base.map, e: { ...ed.e } };
+      }
+    }
+    if (node._canvas !== at) delete node._at;
+    node._canvas = at; node._w = live.w; node._h = live.h; node.origin = [...live.origin];
+    if (live.map) node.map = structuredClone(live.map);
+    edits.delete(node);
+  }
+  /** Makes every changed picture one of yours before saving; false (and says why) when one couldn't be. */
+  async function flush() {
+    try { for (const node of [...edits.keys()]) await flushOne(node); } catch (e) { toast(`The pictures you changed couldn’t be kept: ${e.message}`, true); return false; }
+    // (what is kept of a picture no longer used, one turned back or replaced, goes)
+    if (isObj(rec.layout.pics)) {
+      const used = new Set(), walk = (o) => { for (const v of Object.values(o)) if (v && typeof v === 'object') { if (isCanvas(v)) used.add(picName(v._canvas)); else walk(v); } };
+      walk(rec.tree);
+      for (const k of Object.keys(rec.layout.pics)) if (!used.has(k)) delete rec.layout.pics[k];
+    }
+    return true;
+  }
+  /** Painting on a picture, in a window of its own (an icon, a frame on the board). */
+  async function paintDialog(node) {
+    let ed;
+    try { ed = await editFor(node); } catch { return; }
+    const shot = h('img', { alt: 'As it is now', class: 'paint-shot', src: picSrc(node) });
+    const pe = pixelEditor(ed.pixels, {
+      onChange: () => { ed.painted = true; remake(ed); touch(); shot.src = picSrc(node); },
+      onRoom: (n) => { ed.base.origin = [ed.base.origin[0] + n, ed.base.origin[1] + n]; },
+      note: 'Paint on it with the mouse; right-click picks a colour. B, E, I and G pick the tools; Ctrl+Z undoes.',
+    });
+    await dialog('Paint it', (close) => [pe.el, h('div', { class: 'paint-now' }, h('span', { class: 'muted' }, 'As it is now:'), shot),
+      h('p', { class: 'muted' }, 'Save keeps it, as a picture of yours; the game’s own picture is left as it is.'),
+      h('div', { class: 'dialog-foot' }, h('button', { type: 'button', class: 'primary', onclick: () => close(true) }, 'Done'))], { wide: true });
+    side();
+    if (board) showBoard();
+  }
+
+  // ---------------------------------------------------------------- the Animate view (studio.js)
+  /** An equip's frame's parts as they are drawn, each the picture itself (a look's layer, another pose's frame...). */
+  function equipParts(pose, f) {
+    const t = rec.tree;
+    if (!isObj(t[pose]) || isLook(t, pose)) return null;
+    const to = linkOf(t, pose), { fr, chain } = frameAt(t, pose, f);
+    if (!fr) return [];
+    const same = to ? { note: `${pose} is the same as ${to}: this is ${to}’s frame, so changing it changes ${to} too.`, separate: { label: `Give ${pose} frames of its own`, run: () => { t[pose] = ownFrames(t, pose); } } } : {};
+    const out = [];
+    for (const [name, v] of Object.entries(fr)) {
+      if (!isObj(v)) continue;
+      if (isCanvas(v)) { out.push({ node: v, name, note: same.note || null, separate: same.separate || null }); continue; }
+      const { c, from } = partAt(chain, v);
+      if (c) out.push({ node: c, name, note: `This is ${fromWords(from)}: changing it changes every pose that wears it.`, separate: { label: 'Give this frame a copy of its own', run: () => { fr[name] = structuredClone(c); } } });
+    }
+    return out;
+  }
+  /** An NPC's frame's picture (a frame the same as another pose's is put through). */
+  function npcParts(pose, f) {
+    const t = rec.tree, frames = t[pose];
+    if (!isObj(frames)) return [];
+    const to = linkOf(t, pose);
+    let v = frames[f];
+    for (let i = 0; i < 4 && typeof v?._uol === 'string'; i++) v = follow([t, frames], v._uol);
+    if (!isCanvas(v)) return [];
+    return [{ node: v, name: `Frame ${f}`, note: to ? `${pose} is the same as ${to}: this is ${to}’s frame, so changing it changes ${to} too.` : null, separate: to ? { label: `Give ${pose} frames of its own`, run: () => { t[pose] = ownFrames(t, pose); } } : null }];
+  }
+  /** Makes an equip worn in a pose it hasn't: wearing its look (the back look on a ladder or rope), else copies of its standing frame. */
+  function wearIn(pose, n) {
+    const t = rec.tree, ls = looksOf(t), climb = pose === 'ladder' || pose === 'rope';
+    const l = climb && ls.includes('backDefault') ? 'backDefault' : ls.includes('default') ? 'default' : ls[0];
+    if (l) { useLook(t, pose, l, n || 1); return; }
+    const first = t.stand1 && numKeys(t.stand1).length ? ownFramesDeep(t, 'stand1')[numKeys(t.stand1)[0]] : null;
+    t[pose] = Object.fromEntries(Array.from({ length: Math.max(1, n || 1) }, (_, i) => [String(i), first ? structuredClone(first) : {}]));
+  }
+  function makeAnim() {
+    const t = rec.tree, equip = rec.kind === 'equip';
+    return studioView({
+      kind: equip ? 'equip' : 'npc', rec, pose: animPose, edits, editFor, touch, picSrc,
+      dropEdit: (node) => edits.delete(node),
+      partsOf: (pose, f) => (equip ? equipParts(pose, f) : npcParts(pose, f)),
+      ownPoses: () => (equip ? framePosesOf(t) : posesOf(t).filter((p) => numKeys(t[p]).length)),
+      addPose: async (pose, n) => { wearIn(pose, n); touch(); return true; },
+      replacePicture: async (node) => {
+        const p = await pickPicture(rec.kind);
+        if (!p) return false;
+        delete node._at;
+        Object.assign(node, canvasOf(rec.kind, p, equip ? [Math.round(p.w / 2), Math.round(p.h / 2)] : [Math.round(p.w / 2), p.h]));
+        touch();
+        return true;
+      },
+      zLayers,
+      borrowed: () => (!equip && t.info?.link !== undefined && t.info.link !== '' && !posesOf(t).some((p) => numKeys(t[p]).length) ? `It takes its looks from NPC ${t.info.link} (info/link), so it has none of its own to change.` : null),
+      ownLooks: async () => {
+        try {
+          const other = await api(`/c/npc/${Number(t.info.link)}`);
+          for (const p of posesOf(other.tree)) t[p] = structuredClone(other.tree[p]);
+          delete t.info.link;
+          touch();
+          return true;
+        } catch (e) { toast(e.message, true); return false; }
+      },
+      addFrame: (pose, f) => {
+        if (linkOf(t, pose)) t[pose] = ownFrames(t, pose);
+        const fr = t[pose], ks = numKeys(fr), list2 = ks.map((k) => fr[k]), v = npcParts(pose, f)[0]?.node;
+        list2.splice(f + 1, 0, structuredClone(v || list2[f] || {}));
+        for (const k of ks) delete fr[k];
+        list2.forEach((x, i) => { fr[i] = x; });
+      },
+      removeFrame: (pose, f) => {
+        if (numKeys(t[pose]).length < 2) { toast('A pose keeps one frame at least: take the pose off on the Looks board instead.', true); return false; }
+        if (linkOf(t, pose)) t[pose] = ownFrames(t, pose);
+        const v = npcParts(pose, f)[0]?.node;
+        if (v) edits.delete(v);
+        delete t[pose][numKeys(t[pose])[f]];
+        renumber(t[pose]);
+        return true;
+      },
+    });
+  }
+
   // ---------------------------------------------------------------- the boards
   /** A pose's first frames, small (following links: a frame the same as another's, a part from a look). */
   const thumbs = (t, pose, kind2, max = 6) => {
@@ -438,14 +664,14 @@ export function thingsTab(host, kinds, blurb) {
     for (const f of numKeys(t[pose]).slice(0, max)) {
       const { fr, chain } = frameAt(t, pose, f);
       const c = isCanvas(fr) ? fr : fr ? Object.values(fr).map((v) => partAt(chain, v).c).find(Boolean) : null;
-      if (c) pics.push(h('img', { alt: '', loading: 'lazy', src: src(kind2, c) }));
+      if (c) pics.push(h('img', { alt: '', loading: 'lazy', src: picSrc(c) }));
     }
     return h('div', { class: 'nb-thumbs' }, pics.length ? pics : h('span', { class: 'muted' }, 'no pictures'));
   };
   /** A look's layers, small, each with its depth. */
   const layerThumbs = (t, look) => {
     const ls = layersOf(t, look);
-    return h('div', { class: 'nb-thumbs' }, ls.length ? ls.map(([name, c]) => h('img', { alt: '', loading: 'lazy', title: `${name} (${c.z ?? 'no layer'})`, src: src(rec.kind, c) })) : h('span', { class: 'muted' }, 'no pictures'));
+    return h('div', { class: 'nb-thumbs' }, ls.length ? ls.map(([name, c]) => h('img', { alt: '', loading: 'lazy', title: `${name} (${c.z ?? 'no layer'})`, src: picSrc(c) })) : h('span', { class: 'muted' }, 'no pictures'));
   };
   /** Equips and items: the thing, its stats, its icon, and an equip's worn look and poses; an item's effect. */
   function thingSpec() {
@@ -455,7 +681,7 @@ export function thingsTab(host, kinds, blurb) {
       thing: { label: NAMES[rec.kind], color: '#2a78d6', outs: () => [{ name: 'stats', label: 'stats', kind: 'stats' }, { name: 'icon', label: 'icon', kind: 'icon' }, ...(equip ? [{ name: 'look', label: 'worn look', kind: 'look' }] : [{ name: 'spec', label: 'when used', kind: 'spec' }])],
         body: () => h('span', null, rec.words?.name || '(no name)') },
       stats: { label: 'Stats', color: '#7a5af5', ins: [{ name: 'in', accepts: ['stats'] }], body: () => { const s = Object.entries(t.info).filter(([, v]) => typeof v === 'number' && v).slice(0, 5); return s.length ? h('div', { class: 'nb-facts' }, s.map(([k, v]) => h('span', null, `${k} ${v}`))) : h('span', { class: 'muted' }, 'none'); } },
-      icon: { label: 'Icon', color: '#d97706', ins: [{ name: 'in', accepts: ['icon'] }], body: () => (isCanvas(t.info.icon) ? h('img', { alt: '', class: 'nb-icon', src: src(rec.kind, t.info.icon) }) : h('span', { class: 'muted' }, 'none')) },
+      icon: { label: 'Icon', color: '#d97706', ins: [{ name: 'in', accepts: ['icon'] }], body: () => (isCanvas(t.info.icon) ? h('img', { alt: '', class: 'nb-icon', src: picSrc(t.info.icon) }) : h('span', { class: 'muted' }, 'none')) },
       spec: { label: 'When used', color: '#16a34a', ins: [{ name: 'in', accepts: ['spec'] }], deletable: true, body: () => { const s = Object.entries(t.spec || {}).filter(([, v]) => typeof v !== 'object').slice(0, 5); return s.length ? h('div', { class: 'nb-facts' }, s.map(([k, v]) => h('span', null, `${k} ${v}`))) : h('span', { class: 'muted' }, 'does nothing yet'); } },
       look: { label: 'Worn look', color: '#0891b2', ins: [{ name: 'in', accepts: ['look'] }],
         outs: () => [...(looksOf(t).length ? [{ name: 'looks', label: 'looks', kind: 'shared' }] : []), { name: 'poses', label: 'poses', kind: 'pose' }],
@@ -521,13 +747,14 @@ export function thingsTab(host, kinds, blurb) {
         return `pose:${p}`;
       },
       inspect(id) {
-        if (!id || id === 'thing') return [h('h3', null, NAMES[rec.kind]), wordsPanel(), preview ? h('h3', null, 'Worn') : null, preview?.el,
-          h('p', { class: 'muted' }, equip ? 'Pick a pose to change how it looks in it: each frame’s parts, their pictures and how they sit on the character.' : 'Pick a node to change it.')];
+        if (!id || id === 'thing') return [h('h3', null, NAMES[rec.kind]), wordsPanel(), preview ? h('h3', null, 'Worn') : null, preview?.el, equip ? animateButton(null, 'Animate it') : null,
+          h('p', { class: 'muted' }, equip ? 'Animate shows it worn, large: click a part to move it, turn it or paint it, live. The board shows how it is made: pick a box to change it.' : 'Pick a box to change it: its stats, its icon, what using it does.')];
         if (id === 'stats') return [h('h3', null, `Stats (info)${rec.folder ? `, a ${rec.folder}` : ''}`), fields(t.info, MORE[rec.kind] || [])];
         if (id === 'icon') return [h('h3', null, 'Icon'), pictureRow(t.info, 'icon', 'icon', (p) => [0, p.h]), pictureRow(t.info, 'iconRaw', 'iconRaw', (p) => [0, p.h]),
-          h('p', { class: 'muted' }, 'The game keeps two of every icon, icon and iconRaw; give both the same picture unless you have two. An icon is 32 by 32 or a little less.')];
+          isCanvas(t.info.icon) ? h('button', { type: 'button', title: 'iconRaw becomes the same picture as icon (as it is now)', onclick: async () => { await flushOne(t.info.icon); t.info.iconRaw = structuredClone(t.info.icon); touch(); side(); showBoard(); } }, 'Make iconRaw the same as icon') : null,
+          h('p', { class: 'muted' }, 'The game keeps two of every icon, icon and iconRaw: give both the same picture unless you have two. An icon is 32 by 32 or a little less. Paint... changes its pixels.')];
         if (id === 'spec') return [h('h3', null, 'What using it does (spec)'), fields(t.spec, MORE.spec)];
-        if (id === 'look') return [h('h3', null, 'Worn look'), preview?.el, looksOf(t).length
+        if (id === 'look') return [h('h3', null, 'Worn look'), preview?.el, animateButton(null, 'Animate it'), looksOf(t).length
           ? h('p', { class: 'muted' }, 'Its pictures are kept in its looks (a cap’s front look and back look), each a picture or a few in layers; its poses wear them. Pick a look to change its layers and which poses wear it. A pose given frames of its own is a node of its own.')
           : h('p', { class: 'muted' }, 'Each pose is a node: add one from Add, wire a pose’s frames into another’s “same as” to share them, and pick one to change its frames.')];
         if (id.startsWith('shared:')) return lookInspector(id.slice(7));
@@ -556,7 +783,7 @@ export function thingsTab(host, kinds, blurb) {
     const t = rec.tree;
     if (!t[l]) return [];
     const zs = zList(), wearers = framePosesOf(t).filter((p) => lookUse(t, p) === l), others = looksOf(t).filter((x) => x !== l), own = framePosesOf(t).filter((p) => !lookUse(t, p));
-    const out = [h('h3', null, `${lookName(l)} (${l})`), preview?.el,
+    const out = [h('h3', null, `${lookName(l)} (${l})`), preview?.el, animateButton(framePosesOf(t).find((p) => lookUse(t, p) === l) || null, 'Animate it'),
       h('p', { class: 'muted' }, l === 'backDefault' ? 'How it looks from behind, worn on a ladder or a rope.' : 'How it looks, in every pose that wears it.'),
       h('h4', null, `Its layers (${layersOf(t, l).length})`)];
     for (const [name, c] of layersOf(t, l)) out.push(h('div', { class: 'frame-card' }, partEditor(t[l], name, c, zs, layersOf(t, l).length > 1 ? () => removeLayer(l, name) : null)));
@@ -593,22 +820,23 @@ export function thingsTab(host, kinds, blurb) {
     const t = rec.tree, frames = t[p];
     if (!frames) return [];
     const to = linkOf(t, p), looks = looksOf(t);
-    const out = [h('h3', null, `${p}${POSES[p] ? `  (${POSES[p]})` : ''}`), preview?.el];
+    const out = [h('h3', null, `${p}${POSES[p] ? `  (${POSES[p]})` : ''}`), preview?.el, animateButton(p)];
     if (to) return [...out, h('p', null, `It is the same as ${to}: it has ${to}’s frames.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
+    const cards = [];
     if (looks.length) out.push(h('div', { class: 'side-buttons' }, looks.map((l) => h('button', { type: 'button', title: 'Its own frames are dropped', onclick: () => { if (!confirm(`${p} drops its own frames and wears the ${lookName(l)}. Go on?`)) return; useLook(t, p, l); picked = `shared:${l}`; touch(); showBoard(); side(); } }, `Wear the ${lookName(l)} instead`))));
     const zs = zList();
     numKeys(frames).forEach((f) => {
       const fr = frames[f];
       if (!isObj(fr)) return;
-      if (typeof fr._uol === 'string') { out.push(h('div', { class: 'frame-card' }, h('strong', null, `Frame ${f}`), h('span', { class: 'muted' }, ` the same as ${fr._uol.replace(/^\.\.\//, '')}`))); return; }
+      if (typeof fr._uol === 'string') { cards.push(h('div', { class: 'frame-card' }, h('strong', null, `Frame ${f}`), h('span', { class: 'muted' }, ` the same as ${fr._uol.replace(/^\.\.\//, '')}`))); return; }
       const parts = Object.entries(fr).filter(([, v]) => isObj(v));
-      out.push(h('div', { class: 'frame-card' }, h('div', { class: 'frame-head' }, h('strong', null, `Frame ${f}`),
+      cards.push(h('div', { class: 'frame-card' }, h('div', { class: 'frame-head' }, h('strong', null, `Frame ${f}`),
         h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(fr); touch(); side(); } }, 'Copy it'),
         h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least: take the pose off instead.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')),
       parts.map(([name, v]) => {
-        if (isCanvas(v)) return partEditor(fr, name, v, zs, () => { delete fr[name]; touch(); side(); });
+        if (isCanvas(v)) return partEditor(fr, name, v, zs, () => { edits.delete(v); delete fr[name]; touch(); side(); });
         const { c, from } = partAt([t, frames, fr], v);
-        return h('div', { class: 'part' }, h('div', { class: 'pic-row' }, h('div', { class: 'pic-frame small' }, c ? h('img', { alt: '', src: src(rec.kind, c) }) : h('span', { class: 'muted' }, 'none')),
+        return h('div', { class: 'part' }, h('div', { class: 'pic-row' }, h('div', { class: 'pic-frame small' }, c ? h('img', { alt: '', src: picSrc(c) }) : h('span', { class: 'muted' }, 'none')),
           h('div', { class: 'pic-what' }, h('strong', null, name), h('span', { class: 'muted' }, `from ${fromWords(from)}`), c ? h('span', { class: 'muted' }, `${c._w} × ${c._h}, layer ${c.z ?? '-'}`) : null)),
         h('div', { class: 'side-buttons' }, h('button', { type: 'button', disabled: !c, title: 'A copy of it, for this frame alone, to change', onclick: () => { fr[name] = structuredClone(c); touch(); side(); } }, 'Give it its own picture'),
           h('button', { type: 'button', class: 'quiet danger', onclick: () => { delete fr[name]; touch(); side(); } }, `Take ${name} off`)));
@@ -623,8 +851,10 @@ export function thingsTab(host, kinds, blurb) {
         touch(); side();
       } }, h('input', { type: 'text', name: 'part', placeholder: 'a part’s name (mail, weapon...)' }), h('button', { type: 'submit' }, 'Add a part'))));
     });
-    out.push(zs, h('button', { type: 'button', onclick: () => { const last = numKeys(frames).pop(); frames[nextKey(frames)] = last ? structuredClone(frames[last]) : {}; touch(); side(); } }, 'Add a frame'),
-      h('p', { class: 'muted' }, 'A part’s point (x, y) is where it is held in its picture; each “join” point is put on the same point of the character (the body’s navel, the hand, the brow...). The layer says what it is drawn over and under.'));
+    out.push(h('p', { class: 'muted' }, `${numKeys(frames).length} frame${numKeys(frames).length === 1 ? '' : 's'}. Animate is the easy way to change them; the numbers are here too.`),
+      h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, 'Each frame’s parts, in numbers')), cards, zs,
+        h('button', { type: 'button', onclick: () => { const last = numKeys(frames).pop(); frames[nextKey(frames)] = last ? structuredClone(frames[last]) : {}; touch(); side(); } }, 'Add a frame'),
+        h('p', { class: 'muted' }, 'A part’s point (x, y) is where it is held in its picture; each “join” point is put on the same point of the character (the body’s navel, the hand, the brow...). The layer says what it is drawn over and under.')));
     return out;
   }
   /** Numbers a pose's frames 0, 1, 2... again after one is taken out. */
@@ -678,13 +908,13 @@ export function thingsTab(host, kinds, blurb) {
         return `pose:${p}`;
       },
       inspect(id) {
-        if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
+        if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
         if (id === 'info') return [h('h3', null, 'Settings (info)'), fields(t.info, MORE.npc)];
         if (id === 'quests') return questsInspector();
         const p = id.slice(5), frames = t[p], to = linkOf(t, p);
         if (!frames) return [];
         if (to) return [h('h3', null, p), preview?.el, h('p', null, `It is the same as ${to}.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
-        return [h('h3', null, p), preview?.el, numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
+        return [h('h3', null, p), preview?.el, animateButton(p), numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
           isCanvas(frames[f]) ? h('label', { class: 'field' }, h('span', null, 'delay'), h('input', { type: 'number', value: frames[f].delay ?? 100, title: 'How long it shows, in milliseconds.', onchange: (e) => { frames[f].delay = Number(e.target.value) || 0; touch(); } })) : null,
           h('div', { class: 'side-buttons' }, h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(frames[f]); touch(); side(); } }, 'Copy it'),
             h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')))),
@@ -924,12 +1154,16 @@ export function thingsTab(host, kinds, blurb) {
             h('p', { class: 'muted' }, 'Add items to bring, monsters to hunt, quests needed and items given from Add, and wire each into the step it belongs to.')];
           case 'startNpc': return [h('h3', null, 'Given by'), pickRow('NPC', q.Check[0], 'npc', 'npc'), h('p', { class: 'muted' }, 'An NPC of your own works too. Anything more than its lines is a script on the game server (scripts/quest/<its number>.js).')];
           case 'endNpc': return [h('h3', null, 'Handed in to'), pickRow('NPC', q.Check[1], 'npc', 'npc')];
-          case 'startNeeds': return [h('h3', null, 'To start it (Check 0)'), h('p', { class: 'muted' }, 'lvmin and lvmax for the level, job for the jobs; items and quests needed are wired in.'), tree(q.Check[0], 0, ['npc', 'item', 'quest'])];
-          case 'endNeeds': return [h('h3', null, 'To finish it (Check 1)'), h('p', { class: 'muted' }, 'Items to bring and monsters to hunt are wired in.'), tree(q.Check[1], 0, ['npc', 'item', 'mob'])];
+          case 'startNeeds': return [h('h3', null, 'Who can start it'), numRows(q.Check[0], [['lvmin', 'Lowest level'], ['lvmax', 'Highest level']]), h('p', { class: 'muted' }, 'Leave a box empty for no limit. Items and quests needed are wired in from Add.'),
+            h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, 'Everything else the game keeps (Check 0): jobs, dates...')), tree(q.Check[0], 0, ['npc', 'item', 'quest', 'lvmin', 'lvmax']))];
+          case 'endNeeds': return [h('h3', null, 'To finish it'), h('p', { class: 'muted' }, 'Items to bring and monsters to hunt are wired in from Add.'), numRows(q.Check[1], [['endmeso', 'Mesos to hand over']]),
+            h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, 'Everything else the game keeps (Check 1)')), tree(q.Check[1], 0, ['npc', 'item', 'mob', 'endmeso']))];
           case 'startSay': return [h('h3', null, 'What is said at the start (Say 0)'), ...lines(q.Say[0])];
           case 'endSay': return [h('h3', null, 'What is said at the end (Say 1)'), ...lines(q.Say[1])];
-          case 'startGives': return [h('h3', null, 'What starting it gives (Act 0)'), tree(q.Act[0], 0, ['item'])];
-          case 'endGives': return [h('h3', null, 'What finishing it gives (Act 1)'), h('p', { class: 'muted' }, 'exp, money, pop (fame), nextQuest; items are wired in (a count below zero takes the item away).'), tree(q.Act[1], 0, ['item'])];
+          case 'startGives': return [h('h3', null, 'What starting it gives'), numRows(q.Act[0], GIVES), h('p', { class: 'muted' }, 'Items are wired in from Add (a count below zero takes the item away).'),
+            h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, 'Everything else the game keeps (Act 0)')), tree(q.Act[0], 0, ['item', ...GIVES.map((g) => g[0])]))];
+          case 'endGives': return [h('h3', null, 'What finishing it gives'), numRows(q.Act[1], [...GIVES, ['nextQuest', 'The quest that follows (its number)']]), h('p', { class: 'muted' }, 'Items are wired in from Add (a count below zero takes the item away).'),
+            h('details', { class: 'group' }, h('summary', null, h('span', { class: 'group-name' }, 'Everything else the game keeps (Act 1)')), tree(q.Act[1], 0, ['item', 'nextQuest', ...GIVES.map((g) => g[0])]))];
           default: {
             const a = find2(id), l = loose.find((x) => x.id === id), d = a?.data || l?.data, type = a ? a.type : l?.type;
             if (!d || !PIECE[type]) return [];
@@ -961,13 +1195,25 @@ export function thingsTab(host, kinds, blurb) {
     else arrange(g, { ...(spec.defaults ? spec.defaults(g) : {}), ...kept() });
     board.show(g);
   }
-  function side() { fill(inspect, spec ? spec.inspect(picked) : null); }
+  function side() {
+    const out = [].concat(spec ? spec.inspect(picked) ?? [] : []), type = picked && board?.typeOf(picked);
+    if (type && spec.types[type]?.deletable) out.push(h('button', { type: 'button', class: 'quiet danger remove-node', title: 'Or press Delete', onclick: () => { if (spec.remove(picked)) { picked = null; touch(); showBoard(); side(); } } }, 'Remove it'));
+    fill(inspect, out);
+  }
+  /** A wire picked on the board: what it joins, and a button to cut it. */
+  function wirePanel(w) {
+    const name = (id) => String(id).replace(/^[a-z]+:/, '');
+    fill(inspect, h('h3', null, 'A wire'), h('p', null, `From ${name(w.from[0])} (${w.from[1]}) into ${name(w.to[0])}.`),
+      w.fixed ? h('p', { class: 'muted' }, 'This one is part of how it is made, so it stays.')
+        : [h('button', { type: 'button', class: 'danger', onclick: () => { if (spec.disconnect(w)) { board.unpickWire(); touch(); showBoard(); side(); } } }, 'Cut it'), h('p', { class: 'muted' }, 'Or press Delete. Wire it again by dragging from a dot on the right of a box to one on the left of another.')]);
+  }
   const posePicked = () => (picked?.startsWith('pose:') ? picked.slice(5) : null);
   function newBoard() {
     spec = makeSpec();
     board = nodeBoard({
       types: spec.types, addable: spec.addable || [],
-      onSelect: (id) => { picked = id; side(); if (preview && rec) preview.show(rec, posePicked()); },
+      onSelect: (id) => { picked = id; side(); if (preview && rec) preview.show(shownRec(), posePicked()); },
+      onWire: (w) => { picked = null; wirePanel(w); },
       onMove: (id, x, y) => { if (spec.move) spec.move(id, x, y); else kept()[id] = [x, y]; touch(); },
       onConnect: (w) => { if (spec.connect(w.from, w.to)) { touch(); showBoard(); side(); } },
       onDisconnect: (w) => { if (spec.disconnect(w)) { touch(); showBoard(); side(); } },
@@ -983,12 +1229,14 @@ export function thingsTab(host, kinds, blurb) {
 
   function draw() {
     drawHead();
-    if (!rec) { board = null; fill(editor, h('div', { class: 'thing-empty' }, h('h2', null, kinds.map((k) => k[1]).join(' and ')), h('p', null, blurb))); return; }
+    anim?.stop(); anim = null;
+    if (!rec) { board = null; fill(editor, h('div', { class: 'thing-empty' }, h('h2', null, kinds.map((k) => k[1]).join(' and ')), h('p', null, blurb), HOW())); return; }
+    if (view === 'studio') { board = null; anim = makeAnim(); fill(editor, anim.el); return; }
     if (!board) newBoard();
     fill(editor, h('div', { class: 'thing-board' }, board.el), inspect);
     showBoard();
     side();
-    if (preview) preview.show(rec, posePicked());
+    if (preview) preview.show(shownRec(), posePicked());
   }
 
   fill(host, h('div', { class: 'things' },

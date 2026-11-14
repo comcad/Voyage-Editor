@@ -9,11 +9,34 @@ import { CharacterLook, loadZmap, drawParts, setCharSprites, lookCanvases, equip
 
 const SCALE = 2, W = 240, H = 220;
 let assets = null, zmap = null;
+/** The page's one way of reading the game's files (kept between previews), and the character's layers once read. */
+export function shared() {
+  assets ??= new Assets('/assets');
+  zmap ??= loadZmap(assets);
+  return { assets, zmap };
+}
+
+/** A picture made on the page (a canvas) to be drawn wherever a canvas node's _canvas is `key`. */
+export function putLive(key, canvas) {
+  const { assets: a } = shared(), e = a.imgCache.get(key);
+  if (e) { e.img = canvas; return; }
+  a.imgCache.set(key, { img: canvas, ready: true, started: true, pri: 0, tries: 0, promise: Promise.resolve(canvas) });
+}
+
+/**
+ * Calls draw(now) every frame from now until stop(); while `el` is off the page (another node's panel shows) it
+ * waits rather than drawing, and takes up again when it is back.
+ */
+function frames(el, draw) {
+  let alive = true;
+  const tick = (now) => { if (!alive) return; if (el.isConnected) draw(now); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+  return () => { alive = false; };
+}
 
 export function wornPreview() {
   setCharSprites(false);   // (each part drawn as it is: nothing kept between changes)
-  assets ??= new Assets('/assets');
-  zmap ??= loadZmap(assets);
+  shared();
   const canvas = h('canvas', { class: 'worn-canvas', width: W, height: H, 'aria-label': 'The equip worn by a character' });
   const pose = h('select', { 'aria-label': 'Pose' }), face = h('button', { type: 'button', title: 'Face the other way' }, 'Turn');
   const play = h('button', { type: 'button' }, 'Pause'), step = h('button', { type: 'button', title: 'The next frame' }, 'Next frame');
@@ -31,15 +54,14 @@ export function wornPreview() {
     if (look?.loaded && look.has(action)) drawParts(ctx, assets, look.compose(action, frame), W / SCALE / 2, 95, right, 1, true);
   }
   function tick(now) {
-    if (!el.isConnected) return;   // (taken off the page: stops)
+    // (time spent off the page doesn't count: it takes up where it was)
     if (look?.loaded && running && look.has(action)) {
-      t += now - (last || now);
+      t += Math.min(250, now - (last || now));
       const d = look.delay(action, frame);
-      if (t >= d) { t -= d; const n = look.nextFrame(action, frame, back); frame = n.frame; back = n.back; }
+      while (t >= d) { t -= d; const n = look.nextFrame(action, frame, back); frame = n.frame; back = n.back; }
     }
     last = now;
     draw();
-    requestAnimationFrame(tick);
   }
   pose.addEventListener('change', () => { action = pose.value; frame = 0; back = false; t = 0; ready(); });
   face.addEventListener('click', () => { right = !right; draw(); });
@@ -71,8 +93,8 @@ export function wornPreview() {
     note.textContent = own.length ? '' : 'It has no poses of its own: nothing of it shows on a character.';
     ready();
   }
-  requestAnimationFrame(tick);
-  return { el, show, get action() { return action; } };
+  const stop = frames(el, tick);
+  return { el, show, stop, get action() { return action; } };
 }
 
 /**
@@ -80,7 +102,7 @@ export function wornPreview() {
  * one after another at their own delays. One that takes its looks from another (info/link) shows that one's.
  */
 export function npcPreview() {
-  assets ??= new Assets('/assets');
+  shared();
   const canvas = h('canvas', { class: 'worn-canvas', width: W, height: H, 'aria-label': 'The NPC' });
   const pose = h('select', { 'aria-label': 'Pose' }), face = h('button', { type: 'button', title: 'Face the other way' }, 'Turn');
   const play = h('button', { type: 'button' }, 'Pause'), step = h('button', { type: 'button', title: 'The next frame' }, 'Next frame');
@@ -90,13 +112,13 @@ export function npcPreview() {
   const isCanvas = (v) => v !== null && typeof v === 'object' && typeof v._canvas === 'string';
   const frameKeys = (o) => Object.keys(o || {}).filter((k) => /^\d+$/.test(k) && isCanvas(o[k])).sort((a, b) => a - b);
   let look = null, action = 'stand', frame = 0, t = 0, last = 0, right = false, running = true, seq = 0;
-  const frames = () => frameKeys(look?.[action]);
+  const shown = () => frameKeys(look?.[action]);
   function draw() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.imageSmoothingEnabled = false;
     // an NPC can be tall: drawn at full size when it fits, smaller when it doesn't
-    const c = look?.[action]?.[frames()[frame]];
+    const c = look?.[action]?.[shown()[frame]];
     const k = c ? Math.min(SCALE, (H - 20) / (c._h || 1), (W - 20) / (c._w || 1)) : SCALE;
     ctx.translate(W / 2, H - 14);
     ctx.scale(k, k);
@@ -108,22 +130,20 @@ export function npcPreview() {
     ctx.drawImage(s.img, s.x, s.y, s.w, s.h, -(c.origin?.[0] ?? 0), -(c.origin?.[1] ?? 0), s.w, s.h);
   }
   function tick(now) {
-    if (!el.isConnected) return;
-    const fs = frames();
+    const fs = shown();
     if (running && fs.length > 1) {
-      t += now - (last || now);
+      t += Math.min(250, now - (last || now));
       const d = Math.abs(Number(look[action][fs[frame]]?.delay) || 100);
       if (t >= d) { t -= d; frame = (frame + 1) % fs.length; }
     }
     last = now;
     draw();
-    requestAnimationFrame(tick);
   }
   pose.addEventListener('change', () => { action = pose.value; frame = 0; t = 0; ready(); });
   face.addEventListener('click', () => { right = !right; draw(); });
   play.addEventListener('click', () => { running = !running; play.textContent = running ? 'Pause' : 'Play'; });
-  step.addEventListener('click', () => { const n = frames().length; if (!n) return; running = false; play.textContent = 'Play'; frame = (frame + 1) % n; draw(); });
-  function ready() { assets.preload(frames().map((f) => look[action][f])); }
+  step.addEventListener('click', () => { const n = shown().length; if (!n) return; running = false; play.textContent = 'Play'; frame = (frame + 1) % n; draw(); });
+  function ready() { assets.preload(shown().map((f) => look[action][f])); }
 
   /** Shows the NPC `rec` ({ tree }), in pose `want` when it has it. Only the newest call's NPC is drawn. */
   async function show(rec, want = null) {
@@ -141,10 +161,10 @@ export function npcPreview() {
     else if (!poses.includes(action)) action = poses.includes('stand') ? 'stand' : poses[0];
     fill(pose, poses.map((p) => h('option', { value: p }, p)));
     pose.value = action;
-    if (frame >= frames().length) frame = 0;
+    if (frame >= shown().length) frame = 0;
     note.textContent = from !== null ? `It takes its looks from NPC ${from} (info/link).` : poses.length ? '' : 'It has no pictures yet.';
     ready();
   }
-  requestAnimationFrame(tick);
-  return { el, show };
+  const stop = frames(el, tick);
+  return { el, show, stop };
 }

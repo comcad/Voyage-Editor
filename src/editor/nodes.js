@@ -14,7 +14,7 @@ import { h, svg, fill } from './ui.js';
 const MIN_ZOOM = 0.25, MAX_ZOOM = 2;
 const isTyping = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
 
-export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, onDisconnect, onDelete, onAdd }) {
+export function nodeBoard({ types, addable = [], onSelect, onWire, onMove, onConnect, onDisconnect, onDelete, onAdd }) {
   let graph = { nodes: [], wires: [] }, picked = null, pickedWire = null, view = { x: 40, y: 40, k: 1 }, fitted = false;
   const els = new Map();   // node id -> its element
   const world = h('div', { class: 'nb-world' }), wires = svg('svg', { class: 'nb-wires', width: 1, height: 1 });
@@ -26,7 +26,7 @@ export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, on
     h('button', { type: 'button', title: 'Zoom out', 'aria-label': 'Zoom out', onclick: () => zoomAt(null, 1 / 1.2) }, '−'),
     h('button', { type: 'button', title: 'Zoom in', 'aria-label': 'Zoom in', onclick: () => zoomAt(null, 1.2) }, '+'), zoomLabel);
   world.append(wires);
-  const el = h('div', { class: 'nb', tabindex: 0, 'aria-label': 'Node board: drag nodes by their titles, the board to move about, the wheel to zoom.' }, world, bar, menu);
+  const el = h('div', { class: 'nb', tabindex: 0, 'aria-label': 'Node board: drag a node to move it, drag from a dot on its right to wire it, drag the board to move about, the wheel to zoom.' }, world, bar, menu);
 
   const place = () => { world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; zoomLabel.textContent = `${Math.round(view.k * 100)}%`; };
   /** A point on the screen as a point on the board. */
@@ -133,18 +133,28 @@ export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, on
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.target.closest('.nb-bar, .nb-menu')) return;
     menu.hidden = true;
-    const out = e.target.closest('.nb-port.out'), head = e.target.closest('.nb-head'), node = e.target.closest('.nb-node'), wire = e.target.closest('.nb-wire-hit');
+    const out = e.target.closest('.nb-port.out'), node = e.target.closest('.nb-node'), wire = e.target.closest('.nb-wire-hit');
+    if (node && !out && e.target.closest('button, input, select, textarea, a, summary')) return;   // (what is in a node works as it is)
     if (out) {
       const from = [out.dataset.node, out.dataset.port], a = portAt(...from.slice(0, 1), 'out', from[1]);
       const temp = svg('path', { class: 'nb-wire temp', d: curve(a, a) });
       wires.append(temp);
       drag = { kind: 'wire', from, kindOf: out.dataset.kind, a, temp };
-    } else if (head) {
-      const n = graph.nodes.find((x) => x.id === head.dataset.node);
+    } else if (node) {
+      // a node is picked as it is pressed, and moves with the pointer from anywhere on it
+      const n = graph.nodes.find((x) => x.id === node.dataset.node);
       if (!n) return;
+      if (picked !== n.id) select(n.id);
+      el.focus({ preventScroll: true });
       drag = { kind: 'node', n, sx: e.clientX, sy: e.clientY, x: n.x, y: n.y, moved: false };
-    } else if (node) { select(node.dataset.node); return; }
-    else if (wire) { pickedWire = Number(wire.dataset.wire); picked = null; for (const x of els.values()) x.classList.remove('on'); drawWires(); onSelect?.(null); el.focus(); return; }
+      node.classList.add('dragging');
+    } else if (wire) {
+      pickedWire = Number(wire.dataset.wire); picked = null;
+      for (const x of els.values()) x.classList.remove('on');
+      drawWires(); el.focus();
+      if (onWire) onWire(graph.wires[pickedWire]); else onSelect?.(null);
+      return;
+    }
     else drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, x: view.x, y: view.y, moved: false };
     el.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -198,7 +208,8 @@ export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, on
       const into = intoAt(e.clientX, e.clientY, d.kindOf, d.from[0]);
       if (into) onConnect?.({ from: d.from, to: [into.dataset.node, into.dataset.port] });
     } else if (d.kind === 'node') {
-      if (d.moved) onMove?.(d.n.id, d.n.x, d.n.y); else select(d.n.id);
+      els.get(d.n.id)?.classList.remove('dragging');
+      if (d.moved) onMove?.(d.n.id, d.n.x, d.n.y);
     } else if (!d.moved) { select(null); }
   });
   el.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e, e.deltaY < 0 ? 1.1 : 1 / 1.1); }, { passive: false });
@@ -221,6 +232,10 @@ export function nodeBoard({ types, addable = [], onSelect, onMove, onConnect, on
 
   return {
     el, show, redraw, select, fit,
+    /** The kind of node a node is. */
+    typeOf: (id) => graph.nodes.find((n) => n.id === id)?.type ?? null,
+    /** Lets go of the wire picked (it was cut). */
+    unpickWire() { pickedWire = null; drawWires(); },
     /** The wire picked (or null), for a button that takes it off. */
     get pickedWire() { return pickedWire === null ? null : graph.wires[pickedWire] || null; },
     get picked() { return picked; },

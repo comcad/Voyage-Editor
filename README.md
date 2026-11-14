@@ -2,9 +2,9 @@
 
 <img src="https://github.com/user-attachments/assets/f3327f7f-5a19-403d-b881-d540287cdf14" width="120" height="120" alt="Voyage MapleStory map editor logo" />
 
-# Voyage Editor: MapleStory Map Editor
+# Voyage Editor: Voyage-Client Map Editor
 
-**An open-source MapleStory v83 (GMS) map, item, NPC and quest editor that runs in your browser.**
+**An open-source Voyage-Client v83 (GMS) map, item, NPC and quest editor that runs in your browser.**
 Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 
 <br />
@@ -24,12 +24,10 @@ Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 
 <br />
 
-**Voyage Editor** is an open-source **MapleStory map editor** for **v83 (GMS)**, with editors for items, equips, NPCs and quests beside it. It opens in a web browser, draws maps with [Voyage-Client](https://github.com/comcad/Voyage-Client)'s own renderer, and publishes what you make into the shared assets folder's `customs` folder, where Voyage-Client and [Voyage-Server](https://github.com/comcad/Voyage-Server) read it. It works like a patch system: the assets stay as the extractor made them, and `customs` holds the files that stand in for theirs.
+**Voyage Editor** is an open-source **Voyage-Client map editor** for **v83 (GMS)**, with editors for items, equips, NPCs and quests beside it. It opens in a web browser, draws maps with [Voyage-Client](https://github.com/comcad/Voyage-Client)'s own renderer, and publishes what you make into the shared assets folder's `customs` folder, where Voyage-Client and [Voyage-Server](https://github.com/comcad/Voyage-Server) read it. It works like a patch system: the assets stay as the extractor made them, and `customs` holds the files that stand in for theirs.
 
 The repository contains the editor page, the small Node.js server that serves it and writes the `customs` folder, and a Dockerfile for running it.
 
-> [!WARNING]
-> Voyage Editor is in **alpha**. Expect rough edges.
 
 ## 🧭 The Voyage Projects
 
@@ -66,7 +64,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
 | 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets |
 
-## 🧩 How the MapleStory Editor Works in a Browser
+## 🧩 How the Voyage-Client Editor Works in a Browser
 
 ```
 ┌──────────────────┐     HTTP      ┌──────────────────┐   reads    ┌─────────────────────────┐
@@ -84,7 +82,7 @@ The browser draws maps with the client's renderer from the assets `server.js` se
 
 ## 📋 Requirements
 
-- A folder of MapleStory v83 GMS `*.wz` files (your own), extracted with the [Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)
+- A folder of Voyage-Client v83 GMS extracted asset files (your own), extracted with the [Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)
 - [Voyage-Client](https://github.com/comcad/Voyage-Client) and [Voyage-Server](https://github.com/comcad/Voyage-Server) pointed at the same assets folder, to play what you make
 - **Either** Node.js ≥ 18 **or** Docker
 
@@ -102,7 +100,7 @@ cd Voyage-Editor
 The WZ extractor lives in its own repo: **[Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)** (pure Node, zero dependencies).
 
 > [!NOTE]
-> Use your own MapleStory v83 GMS `.wz` files.
+> Use your own Voyage-Client v83 GMS asset files.
 
 ```sh
 git clone https://github.com/comcad/Voyage-Wz-Extractor
@@ -234,11 +232,11 @@ Voyage-Editor/
 ## ❓ FAQ
 
 <details>
-<summary><b>What is a MapleStory map editor?</b></summary>
+<summary><b>What is a Voyage-Client map editor?</b></summary>
 
 <br />
 
-A tool for changing the maps of a MapleStory server, or making new ones: where the ground is, where monsters spawn, which NPCs stand where, where portals lead. Voyage Editor is one for v83 that runs in a web browser and draws each map with the game client's own renderer, so a map looks in the editor the way players see it.
+A tool for changing the maps of a Voyage-Client server, or making new ones: where the ground is, where monsters spawn, which NPCs stand where, where portals lead. Voyage Editor is one for v83 that runs in a web browser and draws each map with the game client's own renderer, so a map looks in the editor the way players see it.
 
 </details>
 
@@ -332,6 +330,6 @@ If you are a rights holder and believe this repository infringes your rights, pl
 
 <div align="right">
 
-[⬆ Back to top](#voyage-editor-maplestory-map-editor)
+[⬆ Back to top](#voyage-editor-Voyage-Client-map-editor)
 
 </div>

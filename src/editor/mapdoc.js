@@ -37,6 +37,30 @@ export const FIELDS = {
   info: { more: ['fieldLimit', 'swim', 'fly', 'VRTop', 'VRLeft', 'VRBottom', 'VRRight', 'VRLimit', 'onFirstUserEnter', 'onUserEnter', 'fieldType', 'noMapCmd', 'timeLimit', 'lvLimit', 'lvForceMove', 'decHP', 'protectItem',
     'fixedMobCapacity', 'createMobInterval', 'dropExpire', 'partyOnly', 'personalShop', 'everlast', 'recovery', 'fs', 'link', 'effect', 'miniMapOnOff', 'autoLieDetector', 'timeOut', 'reactorShuffle'] },
 };
+/** What a value is called here (its own name, the game's, is shown small beside it). */
+export const LABELS = {
+  // the map's settings
+  version: 'File version', cloud: 'Clouds drift by', town: 'A town', swim: 'Underwater', fly: 'Players fly', returnMap: 'Return map', forcedReturn: 'Log-in return map', mobRate: 'Monster respawn rate',
+  bgm: 'Music', hideMinimap: 'Hide the minimap', moveLimit: 'Movement limit', mapMark: 'Minimap mark', mapDesc: 'Description', fieldLimit: 'Restrictions', VRTop: 'View: top', VRLeft: 'View: left',
+  VRBottom: 'View: bottom', VRRight: 'View: right', VRLimit: 'View limited', onFirstUserEnter: 'Script, first to enter', onUserEnter: 'Script, on entering', fieldType: 'Kind of map', noMapCmd: 'No map commands',
+  timeLimit: 'Time limit (s)', lvLimit: 'Level needed', lvForceMove: 'Too high a level: sent away', decHP: 'HP lost over time', protectItem: 'Item that protects', fixedMobCapacity: 'Most monsters',
+  createMobInterval: 'Spawn every (ms)', dropExpire: 'Drops vanish after (s)', partyOnly: 'Parties only', personalShop: 'Shops allowed', everlast: 'Drops stay', recovery: 'Recovery rate', fs: 'Slipperiness',
+  link: 'Uses map', effect: 'Effect', miniMapOnOff: 'Minimap can be shown', autoLieDetector: 'Lie detector', timeOut: 'Timed out to', reactorShuffle: 'Reactors shuffle',
+  // NPCs and monsters
+  type: 'NPC or monster', id: 'Which one', x: 'Across (x)', y: 'Down (y)', cy: 'Ground height', fh: 'Foothold', rx0: 'Walks left to', rx1: 'Walks right to', f: 'Faces right', mobTime: 'Respawn time (s)',
+  hide: 'Hidden', team: 'Team', limitedname: 'Limited to',
+  // portals
+  pn: 'Its name', pt: 'Kind', tm: 'Leads to map', tn: 'Leads to portal', script: 'Script', delay: 'Delay', hideTooltip: 'No tooltip', onlyOnce: 'Only once', image: 'Picture',
+  horizontalImpact: 'Push across', verticalImpact: 'Push up', hRange: 'Reach across', vRange: 'Reach up',
+  // footholds, ropes, reactors, scenery
+  x1: 'Starts at (x)', y1: 'Top (y)', x2: 'Ends at (x)', y2: 'Bottom (y)', prev: 'Foothold before', next: 'Foothold after', forbidFallDown: 'Can’t drop down', cantThrough: 'Can’t pass', force: 'Push',
+  l: 'A ladder', uf: 'Climb off the top', page: 'Layer', reactorTime: 'Comes back after (s)', name: 'Name',
+  z: 'Order', zM: 'Order where they overlap', u: 'Kind of piece', no: 'Which piece', bS: 'Background set', oS: 'Object set', l0: 'Group', l1: 'Kind', l2: 'Piece', r: 'Turned', tags: 'Tags', flow: 'Flows',
+  rx: 'Moves with the view, across', ry: 'Moves with the view, up', a: 'How solid (0-255)', front: 'In front of everything', ani: 'Animated', reactor: 'Reactor',
+};
+/** Values that are yes (1) or no (0): a tick box. */
+export const FLAGS = new Set(['cloud', 'town', 'swim', 'fly', 'hideMinimap', 'noMapCmd', 'partyOnly', 'personalShop', 'everlast', 'miniMapOnOff', 'autoLieDetector', 'reactorShuffle', 'VRLimit',
+  'hide', 'f', 'hideTooltip', 'onlyOnce', 'forbidFallDown', 'cantThrough', 'uf', 'l', 'front', 'ani', 'flow']);
 /** The fields that are words, not numbers, when one is added. */
 const WORDS = new Set(['script', 'image', 'name', 'tags', 'limitedname', 'onFirstUserEnter', 'onUserEnter', 'effect', 'bgm', 'mapDesc', 'mapMark', 'bS', 'oS', 'l0', 'l1', 'l2', 'u', 'pn', 'tn', 'id', 'type']);
 export const isWord = (key) => WORDS.has(key);

@@ -10,9 +10,9 @@ import { musicPanel } from './music.js';
 
 const KINDS = [
   ['map', 'Maps', 'Scenery for maps. In the map editor: Add, then Object or Background, and pick the set named custom.'],
-  ['npc', 'NPCs', 'What an NPC of your own looks like: pick one for it on the NPCs tab.'],
-  ['equip', 'Equips', 'An equip’s icon: pick one for it on the Items tab.'],
-  ['item', 'Items', 'An item’s icon: pick one for it on the Items tab.'],
+  ['npc', 'NPCs', 'What an NPC of your own looks like: pick one with New... or Use a picture... on the NPCs tab.'],
+  ['equip', 'Equips', 'Icons for equips, and how they look worn: pick one with Use a picture... on the Items tab, or in Animate. Pictures you paint or turn there are kept here too.'],
+  ['item', 'Items', 'Icons for items: pick one with Use a picture... on the Items tab.'],
 ];
 const cleanName = (n) => n.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^[_-]+|[_-]+$/g, '').slice(0, 40) || 'picture';
 async function toPng(file) {
@@ -30,7 +30,7 @@ export function importTab(host) {
   const refresh = async () => {
     const [list, info] = await Promise.all([api(`/pictures/${kind}`), api('/custom')]);
     blurb.textContent = KINDS.find((k) => k[0] === kind)[2];
-    where.textContent = `Kept in ${info.dir}/${DIRS[kind]}/pictures`;
+    where.textContent = `${list.length} picture${list.length === 1 ? '' : 's'}. Delete one only when nothing uses it any more.`;
     fill(grid, list.length ? list.map((p) => h('figure', { class: 'pic' },
       h('div', { class: 'pic-frame' }, h('img', { alt: '', loading: 'lazy', src: pictureUrl(kind, p.name, p.at) })),
       h('figcaption', null, h('strong', null, p.name), h('span', { class: 'muted' }, `${p.w} × ${p.h}, ${fmt.bytes(p.bytes)}${p.no !== undefined && p.no !== null ? `, background ${p.no}` : ''}`),

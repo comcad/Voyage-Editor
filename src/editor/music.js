@@ -70,7 +70,7 @@ export function musicPanel() {
   const list = h('div', { class: 'track-list' }), where = h('p', { class: 'muted' });
   const refresh = async () => {
     const [m, info] = await Promise.all([musicList(true), api('/custom')]);
-    where.textContent = `Kept in ${info.dir}/music. A map plays one as ${m.own}/<name>: pick it under Music in the map editor.`;
+    where.textContent = 'Pick one for a map under Music in the map editor (or use Import MP3... there).';
     fill(list, m.tracks.length ? m.tracks.map((t) => {
       const bgm = `${m.own}/${t.name}`;
       return h('div', { class: 'track' }, h('strong', null, t.name), h('span', { class: 'muted' }, `${t.ms ? `${trackLength(t.ms)}, ` : ''}${fmt.bytes(t.bytes)}`),

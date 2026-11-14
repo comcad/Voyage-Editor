@@ -26,7 +26,8 @@ export function nodeBoard({ types, addable = [], onSelect, onWire, onMove, onCon
     h('button', { type: 'button', title: 'Zoom out', 'aria-label': 'Zoom out', onclick: () => zoomAt(null, 1 / 1.2) }, '−'),
     h('button', { type: 'button', title: 'Zoom in', 'aria-label': 'Zoom in', onclick: () => zoomAt(null, 1.2) }, '+'), zoomLabel);
   world.append(wires);
-  const el = h('div', { class: 'nb', tabindex: 0, 'aria-label': 'Node board: drag a node to move it, drag from a dot on its right to wire it, drag the board to move about, the wheel to zoom.' }, world, bar, menu);
+  const hint = h('div', { class: 'nb-hint' }, `Drag a box to move it · drag from a dot on its right to wire it${addable.length ? ' · right-click the board to add' : ''} · the wheel zooms`);
+  const el = h('div', { class: 'nb', tabindex: 0, 'aria-label': 'Node board: drag a node to move it, drag from a dot on its right to wire it, drag the board to move about, the wheel to zoom.' }, world, bar, menu, hint);
 
   const place = () => { world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.k})`; zoomLabel.textContent = `${Math.round(view.k * 100)}%`; };
   /** A point on the screen as a point on the board. */
@@ -70,7 +71,7 @@ export function nodeBoard({ types, addable = [], onSelect, onWire, onMove, onCon
     for (const n of graph.nodes) { const e = nodeEl(n); els.set(n.id, e); world.append(e); }
     place();
     // (the first time: as much as fits at a size that can be read, from the top left; Fit shows it all)
-    requestAnimationFrame(() => { unstack(); if (!fitted && graph.nodes.length) { fitted = true; fit(0.75); } else drawWires(); });
+    requestAnimationFrame(() => { unstack(); if (!fitted && graph.nodes.length) { fitted = true; fit(0.65); } else drawWires(); });
   }
   /** Nodes in one column that would lie over each other (a tall one above another) are moved apart, down. */
   function unstack() {

@@ -6,7 +6,7 @@
  */
 import { h, fill, toast, dialog, settled, restartNotice } from './ui.js';
 import { api } from './api.js';
-import { MapDoc, blankMap, KINDS, FIELDS, HINTS, PORTAL_TYPES, PORTAL_NOTES, NO_MAP, isWord } from './mapdoc.js';
+import { MapDoc, blankMap, KINDS, FIELDS, HINTS, LABELS, FLAGS, PORTAL_TYPES, PORTAL_NOTES, NO_MAP, isWord } from './mapdoc.js';
 import { MapView } from './mapview.js';
 import { musicList, importTrack, preview, playButton, trackLength } from './music.js';
 import { exportMap, readMapZip, importMap } from './mapzip.js';
@@ -22,7 +22,22 @@ export function mapsTab(host) {
   const status = { state: h('span'), hint: h('span', { class: 'map-hint' }), at: h('span', { class: 'map-at' }) };
   const bar = h('div', { class: 'map-bar' });
   const at = { x: 0, y: 0, zoom: 100 }, where = () => { status.at.textContent = `${at.x}, ${at.y}   ${at.zoom}%`; };
-  const empty = h('div', { class: 'map-empty' }, h('h2', null, 'Map editor'), h('p', null, 'Find a map by its number or its name to change it, or start a new one.'));
+  const mine = h('div', { class: 'map-mine' });
+  const empty = h('div', { class: 'map-empty' }, h('div', { class: 'welcome' }, h('h2', null, 'Map editor'), h('p', null, 'Change any of the game’s maps, or make one of your own.'),
+    h('ol', { class: 'how' },
+      h('li', null, h('strong', null, 'Open one'), h('span', null, 'Type a map’s number or name in the box at the top left, or start one with New...')),
+      h('li', null, h('strong', null, 'Change it'), h('span', null, 'Click things to pick and drag them; Add puts in NPCs, monsters, portals, ground and scenery.')),
+      h('li', null, h('strong', null, 'Save, then Publish'), h('span', null, 'Save keeps it as your draft. Publish puts it in the game, after a restart.'))),
+    mine));
+  /** The maps of yours (drafts and published ones), on the start page. */
+  async function listMine() {
+    try {
+      const rows = await api('/c/map?q=');
+      fill(mine, rows.length ? [h('h3', null, 'Your maps'), h('div', { class: 'map-mine-list' }, rows.map((r) => h('button', { type: 'button', onclick: () => openMap(r.id) },
+        h('span', null, h('strong', null, String(r.id)), ` ${[r.sub, r.name].filter(Boolean).join(' : ') || '(no name)'}`), r.live ? h('span', { class: 'chip on' }, 'published') : null, r.draft ? h('span', { class: 'chip' }, 'draft') : null)))] : null);
+    } catch { fill(mine); }
+  }
+  listMine();
 
   // ---------------------------------------------------------------- finding and opening
   const results = h('div', { class: 'map-results', hidden: true });
@@ -111,7 +126,7 @@ export function mapsTab(host) {
       refresh(); restartNotice(`Map ${doc.id} is no longer published. Your draft is still open here: throw it away to see the map as the game has it.`);
     } catch (e) { toast(e.message, true); }
   }
-  function closeMap() { preview.stop(); doc = null; canvas.hidden = true; side.hidden = true; empty.hidden = false; refresh(); }
+  function closeMap() { preview.stop(); doc = null; canvas.hidden = true; side.hidden = true; empty.hidden = false; refresh(); listMine(); }
   function undo(again) {
     if (!doc || !(again ? doc.redo() : doc.undo())) return;
     view.listItems();
@@ -328,14 +343,15 @@ export function mapsTab(host) {
       let input;
       if (k === 'pt') input = h('select', { onchange: (e) => set(k, Number(e.target.value)) }, PORTAL_TYPES.map((name, i) => h('option', { value: i, selected: i === v }, `${i}  ${name}${PORTAL_NOTES[i] ? `  (${PORTAL_NOTES[i]})` : ''}`)));
       else if (k === 'type' && kind === 'life') input = h('select', { onchange: (e) => set(k, e.target.value) }, [['n', 'n  (an NPC)'], ['m', 'm  (a monster)']].map(([val, name]) => h('option', { value: val, selected: val === v }, name)));
+      else if (FLAGS.has(k) && (v === 0 || v === 1) && !(k === 'f' && kind !== 'life')) input = h('input', { type: 'checkbox', checked: v === 1, onchange: (e) => set(k, e.target.checked ? 1 : 0) });
       else if (typeof v === 'number') input = h('input', { type: 'number', step: 'any', value: v, 'data-field': k, onchange: (e) => { const n = Number(e.target.value); if (e.target.value !== '' && Number.isFinite(n)) set(k, n); else e.target.value = node[k]; } });
       else input = h('input', { type: 'text', value: v, 'data-field': k, onchange: (e) => set(k, e.target.value) });
       const drop = FIELDS[kind]?.more.includes(k) ? h('button', { type: 'button', class: 'quiet', title: `Take ${k} off`, 'aria-label': `Take ${k} off`, onclick: () => { doc.mark(); delete node[k]; view.changed(path); } }, '×') : null;
-      rows.push(h('label', { class: 'field', title: HINTS[k] || null }, h('span', null, k), input, drop));
+      rows.push(h('label', { class: 'field', title: HINTS[k] || null }, h('span', null, LABELS[k] || k, LABELS[k] ? h('small', { class: 'key' }, ` ${k}`) : null), input, drop));
     }
     const more = (FIELDS[kind]?.more || []).filter((k) => !(k in node));
     const adder = more.length ? h('select', { class: 'adder', 'aria-label': 'Add a field', onchange: (e) => { const k = e.target.value; if (!k) return; doc.mark(); node[k] = isWord(k) ? '' : 0; view.changed(path); } },
-      h('option', { value: '' }, 'Add a field...'), more.map((k) => h('option', { value: k }, k))) : null;
+      h('option', { value: '' }, 'Add a setting...'), more.map((k) => h('option', { value: k }, LABELS[k] ? `${LABELS[k]}  (${k})` : k))) : null;
     const groups = Object.entries(node).filter(([k, v]) => !k.startsWith('_') && v !== null && typeof v === 'object' && !Array.isArray(v)).map(([k]) => k);
     return [rows, adder, groups.length ? h('p', { class: 'muted' }, `Also has ${groups.join(', ')} (kept as it is; not changed here).`) : null];
   }
@@ -384,7 +400,7 @@ export function mapsTab(host) {
         h('p', { class: 'muted' }, `${count('life')} NPCs and monsters, ${count('portal')} portals, ${count('foothold')} footholds, ${count('rope')} ropes and ladders, ${count('obj')} objects, ${count('tile')} tiles.`),
         h('button', { type: 'button', onclick: () => check(null) }, 'Check the map'),
         h('h3', null, 'Music'), musicRow(t),
-        h('h3', null, 'Settings (info)'), t.info ? fields(t.info, 'info', null) : h('button', { type: 'button', onclick: () => { doc.mark(); t.info = blankMap(doc.id).info; view.changed(null); } }, 'Give it settings'),
+        h('h3', null, 'Settings'), t.info ? fields(t.info, 'info', null) : h('button', { type: 'button', onclick: () => { doc.mark(); t.info = blankMap(doc.id).info; view.changed(null); } }, 'Give it settings'),
         h('h3', null, 'Backgrounds'), backs.length ? h('div', { class: 'back-list' }, backs.map((b) => h('button', { type: 'button', onclick: () => view.pick(b.path) }, `${b.path[1]}  ${b.n.bS || '(none)'} ${b.n.no}${b.n.front ? '  (in front)' : ''}`))) : h('p', { class: 'muted' }, 'None. Add one from the Add menu.'));
       return;
     }
@@ -441,8 +457,8 @@ export function mapsTab(host) {
     if (!doc) { fill(status.state, ''); status.hint.textContent = ''; status.at.textContent = ''; return; }
     parts.undo.disabled = !doc.past.length; parts.redo.disabled = !doc.future.length;
     fill(status.state, h('strong', null, `${doc.id} ${[doc.name.streetName, doc.name.mapName].filter(Boolean).join(' : ')}`),
-      h('span', { class: `chip${doc.changed ? ' warn' : ''}` }, doc.changed ? 'changes not saved' : state.draft ? 'draft saved' : 'as it was opened'),
-      h('span', { class: `chip${state.live ? ' on' : ''}` }, state.live ? 'published' : state.assets ? 'players get the assets’ own' : 'not published'));
+      h('span', { class: `chip${doc.changed ? ' warn' : ''}` }, doc.changed ? 'Unsaved changes' : state.draft ? 'Draft saved' : 'No changes'),
+      h('span', { class: `chip${state.live ? ' on' : ''}` }, state.live ? 'Published' : state.assets ? 'Game’s own in play' : 'Not in the game yet'));
     refreshView();
   }
 

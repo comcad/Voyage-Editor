@@ -186,9 +186,18 @@ const VIEWS = {
 const GIVES = [['exp', 'EXP'], ['money', 'Mesos (below 0 takes)'], ['pop', 'Fame']];
 /** The three steps, for a tab with nothing open. */
 const HOW = () => h('ol', { class: 'how' },
-  h('li', null, h('strong', null, 'Find one'), ' by its number or name on the left, or make one with New...'),
-  h('li', null, h('strong', null, 'Change it'), ': pick a box on its board, or open Animate to move, turn and paint its pictures on the character, live.'),
-  h('li', null, h('strong', null, 'Save'), ' keeps it as your draft; ', h('strong', null, 'Publish'), ' puts it in the game (after a restart).'));
+  h('li', null, h('strong', null, 'Find one'), h('span', null, 'Type its number or name on the left, or make your own with New...')),
+  h('li', null, h('strong', null, 'Change it'), h('span', null, 'Pick a box on its board to change it. Animate shows it large, to move, turn and paint its pictures live.')),
+  h('li', null, h('strong', null, 'Save, then Publish'), h('span', null, 'Save keeps it as your draft. Publish puts it in the game, after a restart.')));
+/** A button that opens a short menu: rows of [label, what it does, disabled, title]. */
+function menuButton(label, rows) {
+  const list = h('div', { class: 'menu-list', hidden: true, role: 'menu' }, rows.map(([name, fn, off, title]) => h('button', { type: 'button', role: 'menuitem', disabled: !!off, title: title || null, onclick: () => { list.hidden = true; fn(); } }, name)));
+  const btn = h('button', { type: 'button', 'aria-haspopup': 'true', 'aria-expanded': 'false', onclick: () => { list.hidden = !list.hidden; btn.setAttribute('aria-expanded', String(!list.hidden)); } }, `${label} ▾`);
+  const wrap = h('div', { class: 'menu' }, btn, list);
+  const away = (e) => { if (!wrap.isConnected) { document.removeEventListener('pointerdown', away); return; } if (!wrap.contains(e.target)) { list.hidden = true; btn.setAttribute('aria-expanded', 'false'); } };
+  document.addEventListener('pointerdown', away);
+  return wrap;
+}
 
 /** The tab each kind is edited on, and one to open there next (another tab asked: an NPC's quest, say). */
 const TAB_OF = { item: 'items', equip: 'items', npc: 'npcs', quest: 'quests' };
@@ -398,15 +407,17 @@ export function thingsTab(host, kinds, blurb) {
   function drawHead() {
     if (!rec) { fill(head); return; }
     fill(head, h('h2', null, `${NAMES[rec.kind]} ${rec.id}${rec.kind === 'quest' && rec.tree?.QuestInfo?.name ? `: ${rec.tree.QuestInfo.name}` : rec.words?.name ? `: ${rec.words.name}` : ''}`),
-      h('span', { class: `chip${changed ? ' warn' : ''}` }, changed ? 'changes not saved' : rec.state.draft ? 'draft saved' : 'as it was opened'),
-      h('span', { class: `chip${rec.state.live ? ' on' : ''}` }, rec.state.live ? 'published' : rec.state.assets ? 'players get the game’s own' : 'not published'),
+      h('span', { class: `chip${changed ? ' warn' : ''}`, title: changed ? 'Save keeps them as your draft' : rec.state.draft ? 'Your draft is saved; players don’t have it until you publish' : 'Nothing changed since it was opened' }, changed ? 'Unsaved changes' : rec.state.draft ? 'Draft saved' : 'No changes'),
+      h('span', { class: `chip${rec.state.live ? ' on' : ''}`, title: rec.state.live ? 'Players get yours (after a restart)' : rec.state.assets ? 'Players get the game’s own until you publish' : 'Players don’t have it until you publish' }, rec.state.live ? 'Published' : rec.state.assets ? 'Game’s own in play' : 'Not in the game yet'),
       VIEWS[rec.kind] ? h('div', { class: 'segmented', role: 'group', 'aria-label': 'What to show' }, VIEWS[rec.kind].map(([v, name, title]) => h('button', {
         type: 'button', class: v === view ? 'on' : null, 'aria-pressed': v === view, title, onclick: () => { if (view !== v) { view = v; picked = null; board = null; draw(); } } }, name))) : null,
       h('span', { class: 'spacer' }),
-      h('button', { type: 'button', class: 'primary', onclick: save }, 'Save'), h('button', { type: 'button', onclick: publish, title: 'Write it into the customs folder for the client and the server' }, 'Publish'),
-      h('button', { type: 'button', onclick: unpublish, disabled: !rec.state.live, title: rec.state.live ? 'Take it out of the customs folder again' : 'It isn’t published' }, 'Unpublish'),
-      h('button', { type: 'button', onclick: exportZip, title: 'Save it, with the pictures of yours it uses, as a zip' }, 'Export zip'),
-      h('button', { type: 'button', class: 'quiet', onclick: discard }, 'Throw the draft away'));
+      h('button', { type: 'button', class: 'primary', onclick: save, title: 'Keep it as your draft (Ctrl+S)' }, 'Save'), h('button', { type: 'button', onclick: publish, title: 'Put it in the game (the customs folder): players get it after a restart' }, 'Publish'),
+      h('button', { type: 'button', onclick: exportZip, title: 'Save it, with the pictures of yours it uses, as a zip to keep or pass on' }, 'Export zip'),
+      menuButton('More', [
+        ['Unpublish', unpublish, !rec.state.live, rec.state.live ? 'Take it out of the game again' : 'It isn’t published'],
+        [rec.state.draft ? 'Throw my draft away' : 'Undo my changes', discard, !rec.state.draft && !changed, 'Back to what is published, or the game’s own'],
+      ]));
   }
 
   // ---------------------------------------------------------------- what a node holds (beside the board)
@@ -749,11 +760,11 @@ export function thingsTab(host, kinds, blurb) {
       inspect(id) {
         if (!id || id === 'thing') return [h('h3', null, NAMES[rec.kind]), wordsPanel(), preview ? h('h3', null, 'Worn') : null, preview?.el, equip ? animateButton(null, 'Animate it') : null,
           h('p', { class: 'muted' }, equip ? 'Animate shows it worn, large: click a part to move it, turn it or paint it, live. The board shows how it is made: pick a box to change it.' : 'Pick a box to change it: its stats, its icon, what using it does.')];
-        if (id === 'stats') return [h('h3', null, `Stats (info)${rec.folder ? `, a ${rec.folder}` : ''}`), fields(t.info, MORE[rec.kind] || [])];
+        if (id === 'stats') return [h('h3', null, `Stats${rec.folder ? ` (${rec.folder.toLowerCase()})` : ''}`), fields(t.info, MORE[rec.kind] || [])];
         if (id === 'icon') return [h('h3', null, 'Icon'), pictureRow(t.info, 'icon', 'icon', (p) => [0, p.h]), pictureRow(t.info, 'iconRaw', 'iconRaw', (p) => [0, p.h]),
           isCanvas(t.info.icon) ? h('button', { type: 'button', title: 'iconRaw becomes the same picture as icon (as it is now)', onclick: async () => { await flushOne(t.info.icon); t.info.iconRaw = structuredClone(t.info.icon); touch(); side(); showBoard(); } }, 'Make iconRaw the same as icon') : null,
           h('p', { class: 'muted' }, 'The game keeps two of every icon, icon and iconRaw: give both the same picture unless you have two. An icon is 32 by 32 or a little less. Paint... changes its pixels.')];
-        if (id === 'spec') return [h('h3', null, 'What using it does (spec)'), fields(t.spec, MORE.spec)];
+        if (id === 'spec') return [h('h3', null, 'What using it does'), fields(t.spec, MORE.spec)];
         if (id === 'look') return [h('h3', null, 'Worn look'), preview?.el, animateButton(null, 'Animate it'), looksOf(t).length
           ? h('p', { class: 'muted' }, 'Its pictures are kept in its looks (a cap’s front look and back look), each a picture or a few in layers; its poses wear them. Pick a look to change its layers and which poses wear it. A pose given frames of its own is a node of its own.')
           : h('p', { class: 'muted' }, 'Each pose is a node: add one from Add, wire a pose’s frames into another’s “same as” to share them, and pick one to change its frames.')];
@@ -909,7 +920,7 @@ export function thingsTab(host, kinds, blurb) {
       },
       inspect(id) {
         if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
-        if (id === 'info') return [h('h3', null, 'Settings (info)'), fields(t.info, MORE.npc)];
+        if (id === 'info') return [h('h3', null, 'Settings'), fields(t.info, MORE.npc)];
         if (id === 'quests') return questsInspector();
         const p = id.slice(5), frames = t[p], to = linkOf(t, p);
         if (!frames) return [];
@@ -1020,7 +1031,14 @@ export function thingsTab(host, kinds, blurb) {
         const n = id && node(id);
         if (!n || n.type === 'start') {
           const made = compileDialogue(g, rec.id);
-          return [h('h3', null, 'Dialogue'), h('p', { class: 'muted' }, 'What happens when a player talks to it: add nodes from Add (or a right click on the board) and wire each way out to what comes next. A line with nothing after it ends the talk with OK.'),
+          const start = g.nodes.find((x) => x.type === 'start'), begun = start && g.wires.some((w) => w.from[0] === start.id);
+          const firstLine = start && !begun ? h('button', { type: 'button', class: 'primary', onclick: () => {
+            const id2 = nid();
+            g.nodes.push({ id: id2, type: 'say', x: (start.x ?? 0) + 300, y: start.y ?? 0, data: { text: 'Hello! What can I do for you?' } });
+            g.wires.push({ from: [start.id, 'next'], to: [id2, 'in'] });
+            picked = id2; touch(); showBoard(); board?.select(id2, false); side();
+          } }, 'Start it with a line') : null;
+          return [h('h3', null, 'Dialogue'), h('p', { class: 'muted' }, 'What happens when a player talks to it: add boxes from Add (or a right click on the board) and wire each way out to what comes next. A line with nothing after it ends the talk with OK.'), firstLine,
             made.problems.length ? h('ul', { class: 'problems' }, made.problems.map((p) => h('li', { class: 'bad' }, p))) : h('p', null, 'Nothing wrong found.'),
             h('button', { type: 'button', onclick: () => dialog('Its script', () => h('pre', { class: 'script' }, made.script || 'Nothing yet: wire something to the start.'), { wide: true }) }, 'Show the script'),
             h('p', { class: 'muted' }, 'Publishing writes it into the customs folder as the NPC’s script (customs/scripts/npc), which Voyage-Server runs in place of a script of its own for it.')];
@@ -1230,7 +1248,7 @@ export function thingsTab(host, kinds, blurb) {
   function draw() {
     drawHead();
     anim?.stop(); anim = null;
-    if (!rec) { board = null; fill(editor, h('div', { class: 'thing-empty' }, h('h2', null, kinds.map((k) => k[1]).join(' and ')), h('p', null, blurb), HOW())); return; }
+    if (!rec) { board = null; fill(editor, h('div', { class: 'thing-empty' }, h('div', { class: 'welcome' }, h('h2', null, kinds.map((k) => k[1]).join(' and ')), h('p', null, blurb), HOW()))); return; }
     if (view === 'studio') { board = null; anim = makeAnim(); fill(editor, anim.el); return; }
     if (!board) newBoard();
     fill(editor, h('div', { class: 'thing-board' }, board.el), inspect);
@@ -1253,6 +1271,7 @@ export function thingsTab(host, kinds, blurb) {
     open(k, id);
   };
   window.addEventListener('voyage-open', take);
+  window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && rec && host.isConnected && !host.closest('[hidden]')) { e.preventDefault(); save(); } });
   window.addEventListener('voyage-saved', async (e) => {
     const { kind: k, id } = e.detail;
     if (rec?.kind !== k || rec.id !== id) return;

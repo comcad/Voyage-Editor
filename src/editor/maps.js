@@ -9,6 +9,7 @@ import { api } from './api.js';
 import { MapDoc, blankMap, KINDS, FIELDS, HINTS, PORTAL_TYPES, PORTAL_NOTES, NO_MAP, isWord } from './mapdoc.js';
 import { MapView } from './mapview.js';
 import { musicList, importTrack, preview, playButton, trackLength } from './music.js';
+import { exportMap, readMapZip, importMap } from './mapzip.js';
 import { config } from '../config.js';
 import { isCanvas, frames } from '../assets.js';
 
@@ -116,6 +117,60 @@ export function mapsTab(host) {
     view.listItems();
     if (view.picked && !view.item()) view.picked = null;
     refresh(); inspect(view.item()); view.rebuild();
+  }
+
+  // ---------------------------------------------------------------- a map's zip: exporting and importing
+  async function exportZip() {
+    if (!doc) return;
+    try {
+      const missing = await exportMap(doc);
+      toast(missing.length ? `Exported, but without ${missing.join(', ')}: not found here.` : 'Exported: the map, with the pictures and music of yours it uses.', missing.length > 0);
+    } catch (e) { toast(`The map could not be exported: ${e.message}`, true); }
+  }
+  function importZip() {
+    if (!leave()) return;
+    const input = h('input', { type: 'file', accept: '.zip,application/zip', onchange: async () => {
+      const file = input.files[0];
+      if (!file) return;
+      let z;
+      try { z = await readMapZip(file); } catch (e) { toast(`${file.name} can’t be imported: ${e.message}.`, true); return; }
+      const id = await askNumber(z);
+      if (typeof id !== 'number') return;
+      try {
+        const notes = await importMap(z, id);
+        if (doc) doc.changed = false;   // (leaving its changes was agreed to already)
+        await openMap(id);
+        toast(`Imported as your draft of map ${id}${notes.length ? `. Note: ${notes.join('; ')}` : ''}. Publish it for players to get it.`);
+      } catch (e) { toast(`The map could not be imported: ${e.message}`, true); }
+    } });
+    input.click();
+  }
+  /** Which map number a zip's map is saved as; resolves the number, or nothing. */
+  function askNumber(z) {
+    const id = h('input', { type: 'number', min: 0, max: 999999999, required: true, value: z.id ?? '' });
+    const what = h('p', { class: 'muted' }), note = h('p', { class: 'error', role: 'alert' });
+    const look = settled(async () => {
+      const n = Number(id.value);
+      if (id.value === '' || !Number.isInteger(n) || n < 0 || n > 999999999) { what.textContent = ''; return; }
+      try {
+        const s = await api(`/c/map/${n}/state`);
+        what.textContent = s.draft ? `You have a draft of map ${n}: the zip’s map takes its place.`
+          : s.assets || s.live ? `Map ${n} is there already: the zip’s map becomes your draft of it, and players keep theirs until you publish.`
+            : `No map has the number ${n}: the zip’s map becomes a new map of yours.`;
+      } catch (e) { what.textContent = e.message; }
+    });
+    id.addEventListener('input', look);
+    setTimeout(() => { id.focus(); look(); }, 0);
+    const has = [z.pictures.size ? `${z.pictures.size} picture${z.pictures.size === 1 ? '' : 's'}` : '', z.music ? 'its music' : ''].filter(Boolean).join(' and ');
+    return dialog('Import a map', (close) => h('form', { class: 'form', onsubmit: (e) => {
+      e.preventDefault();
+      const n = Number(id.value);
+      if (id.value === '' || !Number.isInteger(n) || n < 0 || n > 999999999) { note.textContent = 'A map’s number is up to nine digits.'; return; }
+      close(n);
+    } },
+    h('p', null, `${[z.words.streetName, z.words.mapName].filter(Boolean).join(' : ') || 'A map'}${z.id !== null ? `, map ${z.id} where it was exported` : ''}${has ? `, with ${has}` : ''}.`),
+    h('label', null, 'Save it as map', id), what, note,
+    h('div', { class: 'dialog-foot' }, h('button', { type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'primary', type: 'submit' }, 'Import'))));
   }
 
   // ---------------------------------------------------------------- a new map
@@ -360,6 +415,7 @@ export function mapsTab(host) {
   function buildBar() {
     parts.save = button('Save', save, 'primary', 'Keep it as a draft (Ctrl+S)');
     parts.publish = button('Publish', publish, null, 'Give it to players in place of the assets’ own');
+    parts.export = button('Export zip', exportZip, null, 'Save the map as it is here, with the pictures and music of yours it uses, as a zip');
     parts.undo = button('Undo', () => undo(false), null, 'Ctrl+Z'); parts.redo = button('Redo', () => undo(true), null, 'Ctrl+Shift+Z');
     parts.mode = h('div', { class: 'segmented', role: 'group', 'aria-label': 'What the mouse picks' }, [['data', 'Game data'], ['scenery', 'Scenery']].map(([m, name]) => h('button', { type: 'button', 'data-mode': m, onclick: () => { view.mode = m; view.pick(null); refreshView(); } }, name)));
     parts.layer = h('select', { 'aria-label': 'Layer', onchange: (e) => { view.layer = Number(e.target.value); view.redraw(); } }, h('option', { value: -1 }, 'All layers'), [0, 1, 2, 3, 4, 5, 6, 7].map((l) => h('option', { value: l }, `Layer ${l}`)));
@@ -371,9 +427,9 @@ export function mapsTab(host) {
     document.addEventListener('pointerdown', (e) => { if (!parts.show.contains(e.target)) showList.hidden = true; });
     parts.more = menu('More', [['Check the map', () => check(null)], ['Throw the draft away', discard], ['Stop publishing', unpublish], ['Close the map', () => { if (leave()) closeMap(); }]]);
     parts.add = menu('Add', ADD);
-    parts.tools = h('div', { class: 'map-tools' }, parts.save, parts.publish, parts.more, h('span', { class: 'sep' }), parts.undo, parts.redo, h('span', { class: 'sep' }), parts.add, parts.mode, parts.layer, parts.show,
+    parts.tools = h('div', { class: 'map-tools' }, parts.save, parts.publish, parts.export, parts.more, h('span', { class: 'sep' }), parts.undo, parts.redo, h('span', { class: 'sep' }), parts.add, parts.mode, parts.layer, parts.show,
       h('span', { class: 'sep' }), button('−', () => view.zoomAt(view.w / 2, view.h / 2, 1 / 1.25), null, 'Zoom out'), button('+', () => view.zoomAt(view.w / 2, view.h / 2, 1.25), null, 'Zoom in'), button('Fit', () => view.fit(), null, 'The whole map (F)'));
-    fill(bar, h('div', { class: 'map-open' }, find, results), button('New...', newMap), parts.tools);
+    fill(bar, h('div', { class: 'map-open' }, find, results), button('New...', newMap), button('Import zip...', importZip, null, 'Open a map someone exported, as your draft'), parts.tools);
   }
   function refreshView() { if (!view) return; for (const b of parts.mode.children) { const on = b.dataset.mode === view.mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); } }
   function refresh() {

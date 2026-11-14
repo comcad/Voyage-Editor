@@ -59,6 +59,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 🎵 | **Music** | A map's music: any of the game's tracks or one of your own, with a preview; **Import MP3...** brings a track in and sets it |
 | ✅ | **Checks** | Before publishing, a list of what would go wrong on the map (no ground, no place to arrive, something standing on nothing) |
 | ↩️ | **Undo** | Undo and redo every change, and drafts that only the editor sees until you publish |
+| 📦 | **Map zips** | **Export zip** saves a map with the pictures and music of yours it uses; **Import zip...** opens one as your draft of any map number, bringing them in |
 | 🗡️ | **Items & equips** | An item's or an equip's name, description, stats and icon; one of your own from a copy |
 | 🧑 | **NPCs** | An NPC's name and pictures; one of your own from a copy or from a picture |
 | 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
@@ -165,6 +166,19 @@ Other `conf/*.conf` files are read too (each key in only one file), and `node se
 | `Editor.AssetsDir` | `"../voyage-assets"` | The assets folder, shared with Voyage-Client and Voyage-Server, relative to `server.js`; publishing writes its `customs` folder |
 | `Editor.DataDir` | `"data"` | Where your drafts, what you published, your pictures and your music are kept, relative to `server.js` |
 
+## 📦 Map Zips
+
+**Export zip** (in the map editor's bar) saves the open map, as it is in the editor, as `map-<number>-<name>.zip`:
+
+```
+map-990000001-My_Island.zip
+├── map.json                  # the map, its street and map names, and which picture each background of yours is
+├── pictures/Palm.png         # the pictures of yours it uses (objects and backgrounds of the set custom)
+└── music/Theme.mp3           # its music, when it plays a track of yours
+```
+
+**Import zip...** asks which map number to save it as (the number it was exported from, or any other), brings in its pictures and music, saves it as your draft of that number and opens it: check it and publish. A picture or track with the name of a different one already here comes in as `<name>_2`, and the map is made to use that; one that is the same is used as it is, so a zip imported twice brings nothing in twice. A map that led to its own number (its return map, a portal back to itself) leads to its new one.
+
 ## 🗂️ Customs
 
 Publishing writes the assets folder's `customs` folder, laid out like the assets folder itself:
@@ -213,6 +227,8 @@ Voyage-Editor/
 │   │   ├── things.js     # items, equips, NPCs and quests
 │   │   ├── import.js     # pictures and music of your own
 │   │   ├── music.js      # music for maps: the list, the preview, MP3s brought in
+│   │   ├── mapzip.js     # a map as a zip: export and import
+│   │   ├── zip.js        # zip files, written and read in the page
 │   │   └── ui.js, api.js # small helpers
 │   └── *.js              # the map renderer and what it uses, copied from Voyage-Client (map.js, assets.js, ...)
 ├── conf/

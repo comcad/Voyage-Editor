@@ -9,10 +9,7 @@ Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 
 <br />
 
-![MapleStory v83](https://img.shields.io/badge/MapleStory-v83%20GMS-orange?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-alpha-yellow?style=for-the-badge)
 ![License](https://img.shields.io/github/license/comcad/Voyage-Editor?style=for-the-badge)
-
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2018-339933?style=flat-square&logo=nodedotjs&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)
 [![Voyage-Client](https://img.shields.io/badge/Client-Voyage--Client-blue?style=flat-square)](https://github.com/comcad/Voyage-Client)

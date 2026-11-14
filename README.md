@@ -56,12 +56,13 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 🚪 | **Portals** | Add and move portals and wire them to another map's portal, with every portal type explained |
 | 🪜 | **Ground** | Footholds drawn along the ground, ropes and ladders, seats and reactors |
 | 🎨 | **Scenery** | Tiles, objects and backgrounds by set, on any of the eight layers, with snapping and animation if you want them |
+| 🎵 | **Music** | A map's music: any of the game's tracks or one of your own, with a preview; **Import MP3...** brings a track in and sets it |
 | ✅ | **Checks** | Before publishing, a list of what would go wrong on the map (no ground, no place to arrive, something standing on nothing) |
 | ↩️ | **Undo** | Undo and redo every change, and drafts that only the editor sees until you publish |
 | 🗡️ | **Items & equips** | An item's or an equip's name, description, stats and icon; one of your own from a copy |
 | 🧑 | **NPCs** | An NPC's name and pictures; one of your own from a copy or from a picture |
 | 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
-| 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets |
+| 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets. Music of your own (MP3) for maps |
 
 ## 🧩 How It Works in a Browser
 
@@ -162,7 +163,7 @@ Other `conf/*.conf` files are read too (each key in only one file), and `node se
 | `Editor.Port` | `3001` | Port the editor listens on |
 | `Editor.Password` | `""` | The password to sign in with; without one the editor answers only the machine it runs on |
 | `Editor.AssetsDir` | `"../voyage-assets"` | The assets folder, shared with Voyage-Client and Voyage-Server, relative to `server.js`; publishing writes its `customs` folder |
-| `Editor.DataDir` | `"data"` | Where your drafts, what you published and your pictures are kept, relative to `server.js` |
+| `Editor.DataDir` | `"data"` | Where your drafts, what you published, your pictures and your music are kept, relative to `server.js` |
 
 ## 🗂️ Customs
 
@@ -175,11 +176,13 @@ voyage-assets/
     ├── Map/Map/Map9/990000001.img.json      # a map of your own: only customs has it
     ├── Item/Consume/0200.img.json           # the potions' file, with yours in it
     ├── String/Map.img.json                  # the names, with yours in them
-    └── Npc/_custom/npcs/guide.png           # a picture of your own
+    ├── Npc/_custom/npcs/guide.png           # a picture of your own
+    └── Sound/BgmCustom.img/Theme.mp3        # music of your own: a map plays it as BgmCustom/Theme
 ```
 
 - A map, an NPC or an equip is written as its whole file.
 - An item or a quest is put into the file the assets keep it in with its neighbours, and its name into the String file it belongs to.
+- Music you bring in is written at once as the music set `BgmCustom` (`Sound/BgmCustom.img`), so a map plays a track of yours as `BgmCustom/<name>`, the way it plays the game's `Bgm00/GoPicnic`. Players hear it once a map that plays it is published.
 - Every file is written whole, with everything published in it. **Stop publishing** takes yours out again, and players get the assets' own.
 
 Players get a changed file the next time they change maps (the client looks at `customs` again on its own); restart Voyage-Server for the game server to read the new files.
@@ -196,7 +199,7 @@ The editor only ever takes out files it wrote itself (`data/customs-written.json
 
 ```
 Voyage-Editor/
-├── data/                 # your drafts, what you published and your pictures: gitignored
+├── data/                 # your drafts, what you published, your pictures and your music: gitignored
 ├── public/
 │   ├── index.html
 │   ├── editor.css
@@ -208,7 +211,8 @@ Voyage-Editor/
 │   │   ├── mapview.js    # the canvas: drawing, picking, dragging
 │   │   ├── mapdoc.js     # a map being edited: its tree, undo, checks
 │   │   ├── things.js     # items, equips, NPCs and quests
-│   │   ├── import.js     # pictures of your own
+│   │   ├── import.js     # pictures and music of your own
+│   │   ├── music.js      # music for maps: the list, the preview, MP3s brought in
 │   │   └── ui.js, api.js # small helpers
 │   └── *.js              # the map renderer and what it uses, copied from Voyage-Client (map.js, assets.js, ...)
 ├── conf/
@@ -273,7 +277,7 @@ The files it writes are the game's own JSON, laid out as the assets are, so any 
 
 <br />
 
-In `data/` (`Editor.DataDir`): a folder for each kind (`maps/`, `npcs/`, `equips/`, `items/`, `quests/`), with what you published in `published/` and the pictures you imported in `pictures/`. Keep it with the editor: it is what the `customs` folder is written from.
+In `data/` (`Editor.DataDir`): a folder for each kind (`maps/`, `npcs/`, `equips/`, `items/`, `quests/`), with what you published in `published/` and the pictures you imported in `pictures/`, and the music you imported in `music/`. Keep it with the editor: it is what the `customs` folder is written from.
 
 </details>
 

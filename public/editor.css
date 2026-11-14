@@ -289,3 +289,10 @@ textarea { border: 1px solid var(--border); background: var(--surface); border-r
 .table.worlds tfoot th, .table.worlds tfoot td { border-top: 1px solid var(--border); padding-top: 8px; }
 .town-maps { display: flex; flex-wrap: wrap; gap: 4px 14px; white-space: normal; }
 .town-maps label { display: inline-flex; align-items: center; gap: 4px; }
+/* music: the map panel's choice of it, and the Import tab's list of your own */
+.music-row { display: grid; gap: 6px; }
+.music-row select { width: 100%; padding: 3px 6px; }
+.track-list { display: grid; margin-top: 8px; }
+.track { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--grid); }
+.track:last-child { border-bottom: 0; }
+.track strong { overflow-wrap: anywhere; }

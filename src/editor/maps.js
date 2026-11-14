@@ -8,6 +8,7 @@ import { h, fill, toast, dialog, settled } from './ui.js';
 import { api } from './api.js';
 import { MapDoc, blankMap, KINDS, FIELDS, HINTS, PORTAL_TYPES, PORTAL_NOTES, NO_MAP, isWord } from './mapdoc.js';
 import { MapView } from './mapview.js';
+import { musicList, importTrack, preview, playButton, trackLength } from './music.js';
 import { config } from '../config.js';
 import { isCanvas, frames } from '../assets.js';
 
@@ -41,6 +42,7 @@ export function mapsTab(host) {
 
   const leave = () => !doc?.changed || confirm('This map has changes that aren’t saved. Leave them?');
   async function openMap(id) {
+    preview.stop();
     if (!leave()) return;
     try {
       const m = await api(`/c/map/${id}`);
@@ -108,7 +110,7 @@ export function mapsTab(host) {
       refresh(); toast('No longer published. Your draft is still open here: throw it away to see the map as the game has it.');
     } catch (e) { toast(e.message, true); }
   }
-  function closeMap() { doc = null; canvas.hidden = true; side.hidden = true; empty.hidden = false; refresh(); }
+  function closeMap() { preview.stop(); doc = null; canvas.hidden = true; side.hidden = true; empty.hidden = false; refresh(); }
   function undo(again) {
     if (!doc || !(again ? doc.redo() : doc.undo())) return;
     view.listItems();
@@ -278,6 +280,35 @@ export function mapsTab(host) {
     const groups = Object.entries(node).filter(([k, v]) => !k.startsWith('_') && v !== null && typeof v === 'object' && !Array.isArray(v)).map(([k]) => k);
     return [rows, adder, groups.length ? h('p', { class: 'muted' }, `Also has ${groups.join(', ')} (kept as it is; not changed here).`) : null];
   }
+  /** The map's music (info/bgm): the game's tracks and your own, a preview, and an MP3 brought in for it. */
+  function musicRow(t) {
+    if (!t.info) return h('p', { class: 'muted' }, 'Give the map settings first (below).');
+    const setBgm = (v) => { if (v === t.info.bgm) { inspect(null); return; } doc.mark(); t.info.bgm = v; view.changed(null); };
+    const box = h('div', { class: 'music-row' }, h('p', { class: 'muted' }, 'Reading the music...'));
+    musicList().then((m) => {
+      const cur = t.info.bgm || '';
+      const known = new Set([...m.tracks.map((tr) => `${m.own}/${tr.name}`), ...m.sets.flatMap((s) => s.names.map((n) => `${s.set}/${n}`))]);
+      const sel = h('select', { 'aria-label': 'The map’s music', onchange: () => { play.label(); setBgm(sel.value); } },
+        !cur ? h('option', { value: '' }, '(none)') : null,
+        cur && !known.has(cur) ? h('option', { value: cur }, `${cur}  (not found)`) : null,
+        m.tracks.length ? h('optgroup', { label: 'Your music' }, m.tracks.map((tr) => h('option', { value: `${m.own}/${tr.name}` }, `${tr.name}${tr.ms ? `  (${trackLength(tr.ms)})` : ''}`))) : null,
+        m.sets.map((s) => h('optgroup', { label: s.set }, s.names.map((n) => h('option', { value: `${s.set}/${n}` }, n)))));
+      sel.value = cur;
+      const play = playButton(() => sel.value);
+      const input = h('input', { type: 'file', accept: '.mp3,audio/mpeg', hidden: true, onchange: async (e) => {
+        const file = e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        try {
+          const name = await importTrack(file);
+          toast(`${name} brought in and set as this map’s music. Publish the map for players to hear it.`);
+          setBgm(`${m.own}/${name}`);
+        } catch (err) { toast(`${file.name} was not brought in: ${err.message}.`, true); }
+      } });
+      fill(box, sel, h('div', { class: 'side-buttons' }, play, h('button', { type: 'button', onclick: () => input.click() }, 'Import MP3...')), input);
+    }, (e) => fill(box, h('p', { class: 'muted' }, `The music could not be listed: ${e.message}`)));
+    return box;
+  }
   /** While something is dragged, only its numbers change: write them into the boxes that are there. */
   function moveFields(it) {
     if (!it) return;
@@ -293,6 +324,7 @@ export function mapsTab(host) {
         h('h3', null, `Map ${doc.id}`), nameBox('streetName', 'Street'), nameBox('mapName', 'Name'),
         h('p', { class: 'muted' }, `${count('life')} NPCs and monsters, ${count('portal')} portals, ${count('foothold')} footholds, ${count('rope')} ropes and ladders, ${count('obj')} objects, ${count('tile')} tiles.`),
         h('button', { type: 'button', onclick: () => check(null) }, 'Check the map'),
+        h('h3', null, 'Music'), musicRow(t),
         h('h3', null, 'Settings (info)'), t.info ? fields(t.info, 'info', null) : h('button', { type: 'button', onclick: () => { doc.mark(); t.info = blankMap(doc.id).info; view.changed(null); } }, 'Give it settings'),
         h('h3', null, 'Backgrounds'), backs.length ? h('div', { class: 'back-list' }, backs.map((b) => h('button', { type: 'button', onclick: () => view.pick(b.path) }, `${b.path[1]}  ${b.n.bS || '(none)'} ${b.n.no}${b.n.front ? '  (in front)' : ''}`))) : h('p', { class: 'muted' }, 'None. Add one from the Add menu.'));
       return;

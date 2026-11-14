@@ -19,8 +19,10 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
 }
 
 /** Sends a picture (a PNG blob) to /api<path>; the server's answer as JSON. */
-export async function sendPicture(path, blob) {
-  const res = await fetch(`/api${path}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Voyage-Admin': '1', 'Content-Type': 'image/png' }, body: blob });
+export const sendPicture = (path, blob) => sendFile(path, blob, 'image/png');
+/** Sends a file (a blob of `type`) to /api<path>; the server's answer as JSON. */
+export async function sendFile(path, blob, type) {
+  const res = await fetch(`/api${path}`, { method: 'PUT', credentials: 'same-origin', headers: { 'X-Voyage-Admin': '1', 'Content-Type': type }, body: blob });
   if (res.status === 401) { onSignedOut(); throw new Error('Signed out.'); }
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || `The server answered ${res.status}.`);

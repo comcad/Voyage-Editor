@@ -10,6 +10,8 @@
  *     equips/   01302999.json ...  published/   pictures/
  *     items/    02000999.json ...  published/   pictures/
  *     quests/   29950.json ...     published/
+ *     music/    Theme.mp3 ...      music brought in for maps (lengths.json: each one's length): the music set
+ *                                  BgmCustom, which a map plays as BgmCustom/<name>
  *     customs-written.json         the files of the customs folder the editor wrote
  *
  * A file here is { id, kind, words (its name and the like), tree (the same tree the assets keep for one), folder }.
@@ -20,7 +22,7 @@
  * Publishing writes the assets' customs folder (assets/customs, laid out like the assets), which Voyage-Client and
  * Voyage-Server read in place of the assets' own files: a published map, NPC or equip as its whole file; a published
  * item or quest put into the file the assets keep it in with its neighbours; the names put into the String file they
- * belong to; the pictures where the trees that use them say they are. Every such file is written whole, with
+ * belong to; the pictures where the trees that use them say they are; the music as Sound/BgmCustom.img. Every such file is written whole, with
  * everything published in it, and one nothing published accounts for any more is taken out again. The editor only
  * ever takes out files it wrote (customs-written.json lists them): a file you put in the customs folder yourself
  * stays, and the editor builds on it (a String file of yours gets the names put into it).
@@ -45,6 +47,10 @@ const ITEM_CATS = { 2: ['Consume', 'Consume'], 3: ['Install', 'Ins'], 4: ['Etc',
 const PIC_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 const PIC_URL = /^\/[A-Za-z]+\/_custom\/(maps|npcs|equips|items)\/([A-Za-z0-9][A-Za-z0-9_-]{0,39})\.png$/;
 const SET = 'custom';   // the object set and the background set made of the pictures brought in for maps
+const MUSIC = 'BgmCustom';   // the music set made of the tracks brought in: Sound/BgmCustom.img
+const MOST_MUSIC_MS = 3 * 3600 * 1000;
+/** Whether a file starts as an MP3 does: an ID3 tag, or an MPEG audio frame. */
+const isMp3 = (buf) => Buffer.isBuffer(buf) && buf.length > 4 && (buf.toString('latin1', 0, 3) === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0));
 
 /** The part of String/Map.img the game server looks under for a map's name, by its id. */
 export function regionOf(id) {
@@ -87,6 +93,8 @@ export class CustomStore {
     this.index = null;       // what is published (see published())
     this.texts = new Map();  // a served file's text, made once per change
     this.pics = new Map();   // a pictures folder's listing
+    this.trackList = null;   // the music folder's listing
+    this.gameMusic = null;   // the assets' music sets, read once
   }
   kind(k) { const kind = KINDS[k]; if (!kind) throw bad('No such kind of thing.', 404); return kind; }
   draftFile(k, id) { return path.join(this.dir, KINDS[k].dir, `${pad(id, KINDS[k].digits)}.json`); }
@@ -225,6 +233,10 @@ export class CustomStore {
       for (const p of this.pictures(k)) want.set(`${KINDS[k].family}/_custom/${KINDS[k].dir}/${p.name}.png`, { file: path.join(this.picDir(k), `${p.name}.png`) });
     }
     for (const set of ['Obj', 'Back']) { const tree = this.pictureSet(set); if (tree) want.set(`Map/${set}/${SET}.img.json`, JSON.stringify(tree)); }
+    // the music brought in, as a music set of the game's kind: its tracks, and the file listing them
+    const tracks = this.tracks();
+    for (const t of tracks) want.set(`Sound/${MUSIC}.img/${t.name}.mp3`, { file: path.join(this.musicDir(), `${t.name}.mp3`) });
+    if (tracks.length) want.set(`Sound/${MUSIC}.img.json`, JSON.stringify(Object.fromEntries(tracks.map((t) => [t.name, { _sound: `${MUSIC}.img/${t.name}.mp3`, _ms: t.ms }]))));
     for (const rel of this.written()) {
       if (want.has(rel)) continue;
       fs.rmSync(path.join(this.customs, rel), { force: true });
@@ -402,6 +414,61 @@ export class CustomStore {
   }
 }
 
+// ---------------------------------------------------------------- music
+Object.assign(CustomStore.prototype, {
+  musicDir() { return path.join(this.dir, 'music'); },
+  /** The tracks brought in: [{ name, ms, bytes, at }]. */
+  tracks() {
+    const dir = this.musicDir(), key = `${stamp(dir)}:${stamp(path.join(dir, 'lengths.json'))}`;
+    if (this.trackList?.key === key) return this.trackList.list;
+    const lengths = readJson(path.join(dir, 'lengths.json')) || {};
+    let names = [];
+    try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.mp3') && PIC_NAME.test(f.slice(0, -4))).sort(); } catch { /* none yet */ }
+    const list = [];
+    for (const f of names) {
+      try { const st = fs.statSync(path.join(dir, f)), name = f.slice(0, -4); list.push({ name, ms: Number(lengths[name]) || 0, bytes: st.size, at: Math.round(st.mtimeMs) }); } catch { /* gone */ }
+    }
+    this.trackList = { key, list };
+    return list;
+  },
+  /** A track brought in (an MP3), `ms` long; one of the same name is replaced. */
+  addTrack(name, buf, ms) {
+    if (!PIC_NAME.test(name)) throw bad('A track’s name is letters, digits, - and _, up to 40 of them.');
+    if (!isMp3(buf)) throw bad('That is not an MP3 file.');
+    const dir = this.musicDir();
+    writeFile(path.join(dir, `${name}.mp3`), buf);
+    const file = path.join(dir, 'lengths.json'), lengths = readJson(file) || {};
+    lengths[name] = Number.isFinite(ms) && ms > 0 && ms <= MOST_MUSIC_MS ? Math.round(ms) : 0;
+    writeFile(file, JSON.stringify(lengths));
+    this.trackList = null; this.changed();
+    return this.tracks().find((t) => t.name === name);
+  },
+  removeTrack(name) {
+    if (!PIC_NAME.test(name)) throw bad('No such track.', 404);
+    const dir = this.musicDir(), file = path.join(dir, 'lengths.json'), lengths = readJson(file) || {};
+    fs.rmSync(path.join(dir, `${name}.mp3`), { force: true });
+    if (name in lengths) { delete lengths[name]; writeFile(file, JSON.stringify(lengths)); }
+    this.trackList = null; this.changed();
+  },
+  /** The music a map can play: the game's sets (Sound/Bgm*.img), each with its tracks, and the tracks brought in. */
+  music() {
+    if (!this.gameMusic) {
+      const sets = new Map();
+      for (const dir of [this.assets, this.customs]) {
+        let files = [];
+        try { files = fs.readdirSync(path.join(dir, 'Sound')).filter((f) => /^Bgm.*\.img\.json$/.test(f) && f !== `${MUSIC}.img.json`); } catch { /* none */ }
+        for (const f of files) {
+          if (dir === this.customs && this.written().has(`Sound/${f}`)) continue;
+          const tree = readJson(path.join(dir, 'Sound', f)) || {};
+          sets.set(f.slice(0, -9), Object.keys(tree).filter((k) => !k.startsWith('_') && tree[k]?._sound).sort((a, b) => a.localeCompare(b)));
+        }
+      }
+      this.gameMusic = [...sets].sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true })).map(([set, names]) => ({ set, names })).filter((s) => s.names.length);
+    }
+    return { own: MUSIC, tracks: this.tracks(), sets: this.gameMusic };
+  },
+});
+
 /** A copy of `node` in which every link is replaced by a copy of what it leads to (`chain`: the nodes from the file's root down to it). */
 function inline(node, chain) {
   if (!node || typeof node !== 'object' || Array.isArray(node)) return node;
@@ -456,4 +523,8 @@ export function customRoutes(api, guard, store) {
   api.get('/pictures/:kind', guard, wrap((req, res) => res.json(store.pictures(req.params.kind))));
   api.put('/pictures/:kind/:name', guard, express.raw({ type: 'image/png', limit: '12mb' }), wrap((req, res) => { res.json(store.addPicture(req.params.kind, req.params.name, req.body)); console.log(`picture ${req.params.name} brought in for ${KINDS[req.params.kind].dir}`); }));
   api.delete('/pictures/:kind/:name', guard, wrap((req, res) => { store.removePicture(req.params.kind, req.params.name); res.json({ ok: true }); }));
+  // music for maps: the game's and your own; an MP3 brought in (its length, measured by the page, in ?ms)
+  api.get('/music', guard, wrap((req, res) => res.json(store.music())));
+  api.put('/music/:name', guard, express.raw({ type: 'audio/mpeg', limit: '40mb' }), wrap((req, res) => { res.json(store.addTrack(req.params.name, req.body, Number(req.query.ms))); console.log(`music ${req.params.name} brought in`); }));
+  api.delete('/music/:name', guard, wrap((req, res) => { store.removeTrack(req.params.name); res.json({ ok: true }); }));
 }

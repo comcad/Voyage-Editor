@@ -2,10 +2,11 @@
  * Import: pictures of your own, for the things you make. They are kept in the custom folder (never in the assets),
  * one folder of pictures for each kind of thing. Any picture a browser can show can be brought in; it is kept as a
  * PNG. Pictures for maps become the object set and the background set named "custom" in the map editor; the others
- * are picked on the Items and NPCs tabs.
+ * are picked on the Items and NPCs tabs. Music of your own (MP3s) is brought in here too, for maps to play.
  */
 import { h, fill, fmt, toast, DIRS, pictureUrl } from './ui.js';
 import { api, sendPicture } from './api.js';
+import { musicPanel } from './music.js';
 
 const KINDS = [
   ['map', 'Maps', 'Scenery for maps. In the map editor: Add, then Object or Background, and pick the set named custom.'],
@@ -57,6 +58,7 @@ export function importTab(host) {
     type: 'button', class: k === kind ? 'on' : null, 'aria-pressed': k === kind,
     onclick: (e) => { kind = k; for (const b of pick.children) { b.classList.toggle('on', b === e.currentTarget); b.setAttribute('aria-pressed', b === e.currentTarget); } refresh().catch((err) => toast(err.message, true)); },
   }, name)));
-  fill(host, h('section', { class: 'panel' }, h('header', { class: 'panel-head' }, h('h2', null, 'Pictures of your own'), pick), blurb, drop, input, where, grid));
-  return { show() { refresh().catch((e) => toast(e.message, true)); } };
+  const music = musicPanel();
+  fill(host, h('section', { class: 'panel' }, h('header', { class: 'panel-head' }, h('h2', null, 'Pictures of your own'), pick), blurb, drop, input, where, grid), music.panel);
+  return { show() { refresh().catch((e) => toast(e.message, true)); music.refresh().catch((e) => toast(e.message, true)); } };
 }

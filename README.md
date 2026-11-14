@@ -61,7 +61,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | ↩️ | **Undo** | Undo and redo every change, and drafts that only the editor sees until you publish |
 | 📦 | **Map zips** | **Export zip** saves a map with the pictures, music, NPCs and monsters of yours it uses; **Import zip...** opens one as your draft of any map number, bringing them in |
 | 🗡️ | **Items & equips** | A board of nodes: the item, its stats, its icon, what using it does; an equip's worn look as one node for each pose, with each frame's parts (picture, point, layer, the points it is joined by) and a character wearing it, animating |
-| 🧑 | **NPCs** | Its looks as a board (poses and their frames), and its **dialogue** as a board of lines, yes/no questions, choices, checks and actions, published as its script for Voyage-Server |
+| 🧑 | **NPCs** | Its looks as a board (poses and their frames) beside a **preview** of it playing each pose, its **quests** (the ones it gives and takes back: open one, let it go, attach another or make a new one for it), and its **dialogue** as a board of lines, yes/no questions, choices, checks and actions, published as its script for Voyage-Server |
 | 📜 | **Quests** | A quest as a flow, from the NPC that gives it to what finishing it gives, with the items to bring, monsters to hunt, quests needed and items given wired in |
 | 📤 | **Zips everywhere** | **Export zip** and **Import zip...** for items, equips, NPCs (with their dialogue) and quests, as for maps; **Unpublish** takes anything back out of `customs` |
 | 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets. Music of your own (MP3) for maps |
@@ -234,7 +234,7 @@ Voyage-Editor/
 │   │   ├── mapdoc.js     # a map being edited: its tree, undo, checks
 │   │   ├── things.js     # items, equips, NPCs and quests, as boards of nodes
 │   │   ├── nodes.js      # the node board: dragging, wiring, panning, zooming
-│   │   ├── preview.js    # an equip worn by a character (the client's character.js)
+│   │   ├── preview.js    # an equip worn by a character (the client's character.js), and an NPC playing its poses
 │   │   ├── dialogue-script.js # an NPC's dialogue made into its script (also used by the server)
 │   │   ├── thingzip.js   # an item, equip, NPC or quest as a zip
 │   │   ├── import.js     # pictures and music of your own

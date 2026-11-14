@@ -19,7 +19,7 @@
 import { h, fill, toast, dialog, settled, pickFromList, restartNotice, DIRS, pictureUrl } from './ui.js';
 import { api } from './api.js';
 import { nodeBoard, arrange } from './nodes.js';
-import { wornPreview } from './preview.js';
+import { wornPreview, npcPreview } from './preview.js';
 import { compileDialogue, CHECKS, ACTS, outsOf } from './dialogue-script.js';
 import { exportThing, readThingZip, importThing } from './thingzip.js';
 
@@ -162,9 +162,21 @@ const src = (kind, c) => `/assets/${FAMILY[kind]}/${c._canvas}`;
 let layers = null;
 const zLayers = () => (layers ??= fetch('/assets/Base/zmap.img.json').then((r) => r.json()).then((z) => Object.keys(z).filter((k) => !k.startsWith('_'))).catch(() => []));
 
+/** The tab each kind is edited on, and one to open there next (another tab asked: an NPC's quest, say). */
+const TAB_OF = { item: 'items', equip: 'items', npc: 'npcs', quest: 'quests' };
+let pending = null;
+/** Opens a record on the tab for its kind (made when it is first opened, or open already). */
+function openOnTab(kind, id) {
+  pending = { kind, id };
+  location.hash = `#${TAB_OF[kind]}`;
+  window.dispatchEvent(new CustomEvent('voyage-open'));
+}
+/** Says a record was saved from another tab, so one open there with nothing unsaved is read again. */
+const savedElsewhere = (kind, id) => window.dispatchEvent(new CustomEvent('voyage-saved', { detail: { kind, id } }));
+
 /** `kinds`: the kinds this tab works on ([['item', 'Items'], ['equip', 'Equips']]); `blurb`: a line about them. */
 export function thingsTab(host, kinds, blurb) {
-  let kind = kinds[0][0], rec = null, changed = false, view = 'look', picked = null, board = null, spec = null, preview = null;
+  let kind = kinds[0][0], rec = null, changed = false, view = 'look', picked = null, board = null, spec = null, preview = null, npcQuests = null;
   const list = h('div', { class: 'thing-list' }), editor = h('div', { class: 'thing-editor nodes-editor' });
   const inspect = h('aside', { class: 'thing-inspect' });
 
@@ -193,7 +205,14 @@ export function thingsTab(host, kinds, blurb) {
     rec = next; picked = null; view = 'look'; board = null; spec = null;
     rec.layout = isObj(rec.layout) ? rec.layout : {};
     if (rec.kind === 'npc') rec.dialogue = isObj(rec.dialogue) && Array.isArray(rec.dialogue.nodes) ? rec.dialogue : { nodes: [{ id: 'start', type: 'start', x: 0, y: 0, data: {} }], wires: [] };
-    preview = rec.kind === 'equip' ? wornPreview() : null;
+    preview = rec.kind === 'equip' ? wornPreview() : rec.kind === 'npc' ? npcPreview() : null;
+    npcQuests = null;
+    if (rec.kind === 'npc') loadNpcQuests();
+  }
+  /** The quests the NPC open gives or takes back, asked for again after one is attached or let go. */
+  function loadNpcQuests() {
+    const id = rec.id;
+    api(`/npc-quests/${id}`).then((list2) => { if (rec?.id === id && rec.kind === 'npc') { npcQuests = list2; if (board && view === 'look') { showBoard(); if (picked === 'quests') side(); } } }, (e) => toast(e.message, true));
   }
   const soon = settled(() => { if (board && spec) { showBoard(); if (preview && rec) preview.show(rec, posePicked()); } }, 450);
   const touch = () => { if (!changed) { changed = true; drawHead(); } soon(); };
@@ -620,13 +639,20 @@ export function thingsTab(host, kinds, blurb) {
     const t = rec.tree;
     t.info ??= {};
     const types = {
-      npc: { label: 'NPC', color: '#2a78d6', outs: () => [{ name: 'info', label: 'settings', kind: 'info' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
+      npc: { label: 'NPC', color: '#2a78d6', outs: () => [{ name: 'info', label: 'settings', kind: 'info' }, { name: 'quests', label: 'quests', kind: 'quests' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
+      quests: { label: 'Quests', color: '#d97706', ins: [{ name: 'in', accepts: ['quests'] }], body: () => {
+        if (!npcQuests) return h('span', { class: 'muted' }, 'reading...');
+        if (!npcQuests.length) return h('span', { class: 'muted' }, 'gives none, takes none back');
+        const gives = npcQuests.filter((q) => q.gives).length, takes = npcQuests.filter((q) => q.takes).length;
+        return [h('span', { class: 'muted' }, `gives ${gives}, takes back ${takes}`), h('div', { class: 'nb-chips' }, npcQuests.slice(0, 6).map((q) => h('span', { class: 'nb-chip', title: q.name }, `${q.id} ${q.name}`.slice(0, 28))), npcQuests.length > 6 ? h('span', { class: 'muted' }, `+${npcQuests.length - 6}`) : null)];
+      } },
       info: { label: 'Settings', color: '#7a5af5', ins: [{ name: 'in', accepts: ['info'] }], body: () => h('span', { class: 'muted' }, `${Object.keys(t.info).filter((k) => !k.startsWith('_')).length} settings`) },
       pose: { label: 'Pose', color: '#0e7490', deletable: true, ins: [{ name: 'in', accepts: ['pose'] }, { name: 'same', label: 'same as', accepts: ['frames'] }], outs: () => [{ name: 'frames', label: 'its frames', kind: 'frames' }],
         body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t, n.data.pose, 'npc', 5); } },
     };
     const build = () => {
-      const nodes = [{ id: 'npc', type: 'npc', title: String(rec.id) }, { id: 'info', type: 'info' }], wires = [{ from: ['npc', 'info'], to: ['info', 'in'], fixed: true }];
+      const nodes = [{ id: 'npc', type: 'npc', title: String(rec.id) }, { id: 'info', type: 'info' }, { id: 'quests', type: 'quests' }],
+        wires = [{ from: ['npc', 'info'], to: ['info', 'in'], fixed: true }, { from: ['npc', 'quests'], to: ['quests', 'in'], fixed: true }];
       for (const p of posesOf(t)) { nodes.push({ id: `pose:${p}`, type: 'pose', title: p, data: { pose: p } }); wires.push({ from: ['npc', 'poses'], to: [`pose:${p}`, 'in'], fixed: true }); }
       for (const p of posesOf(t)) { const to = linkOf(t, p); if (to && t[to]) wires.push({ from: [`pose:${to}`, 'frames'], to: [`pose:${p}`, 'same'] }); }
       return { nodes, wires };
@@ -652,12 +678,13 @@ export function thingsTab(host, kinds, blurb) {
         return `pose:${p}`;
       },
       inspect(id) {
-        if (!id || id === 'npc') return [h('h3', null, 'NPC'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board. Put it on a map in the map editor.')];
+        if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
         if (id === 'info') return [h('h3', null, 'Settings (info)'), fields(t.info, MORE.npc)];
+        if (id === 'quests') return questsInspector();
         const p = id.slice(5), frames = t[p], to = linkOf(t, p);
         if (!frames) return [];
-        if (to) return [h('h3', null, p), h('p', null, `It is the same as ${to}.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
-        return [h('h3', null, p), numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
+        if (to) return [h('h3', null, p), preview?.el, h('p', null, `It is the same as ${to}.`), h('button', { type: 'button', onclick: () => { t[p] = ownFrames(t, p); touch(); showBoard(); side(); } }, 'Give it frames of its own')];
+        return [h('h3', null, p), preview?.el, numKeys(frames).map((f) => h('div', { class: 'frame-card' }, pictureRow(frames, f, `Frame ${f}`, (pic) => [Math.round(pic.w / 2), pic.h]),
           isCanvas(frames[f]) ? h('label', { class: 'field' }, h('span', null, 'delay'), h('input', { type: 'number', value: frames[f].delay ?? 100, title: 'How long it shows, in milliseconds.', onchange: (e) => { frames[f].delay = Number(e.target.value) || 0; touch(); } })) : null,
           h('div', { class: 'side-buttons' }, h('button', { type: 'button', class: 'quiet', onclick: () => { frames[nextKey(frames)] = structuredClone(frames[f]); touch(); side(); } }, 'Copy it'),
             h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (numKeys(frames).length < 2) { toast('A pose keeps one frame at least.', true); return; } delete frames[f]; renumber(frames); touch(); side(); } }, 'Take it off')))),
@@ -665,6 +692,70 @@ export function thingsTab(host, kinds, blurb) {
         h('p', { class: 'muted' }, 'An NPC stands on its point: the middle of the picture’s bottom edge for one you bring in.')];
       },
     };
+  }
+
+  /** The quests an NPC gives and takes back: each to open, or to let go of; one to attach, or a new one made for it. */
+  function questsInspector() {
+    const npc = rec.id, out = [h('h3', null, 'Quests')];
+    if (!npcQuests) return [...out, h('p', { class: 'muted' }, 'Reading which quests it has...')];
+    out.push(h('p', { class: 'muted' }, 'A quest names the NPC that gives it (its start) and the one it is handed in to (its end). Attaching one here changes the quest: it is saved as your draft of it, to publish on the Quests tab.'));
+    out.push(npcQuests.length ? h('div', { class: 'wearers quest-rows' }, npcQuests.map((q) => h('div', { class: 'wearer' },
+      h('span', null, h('strong', null, String(q.id)), ` ${q.name || '(no name)'} `, q.gives ? h('span', { class: 'chip on' }, 'gives') : null, ' ', q.takes ? h('span', { class: 'chip on' }, 'takes back') : null, ' ',
+        q.draft ? h('span', { class: 'chip' }, 'draft') : q.live ? h('span', { class: 'chip' }, 'published') : null),
+      h('button', { type: 'button', class: 'quiet', onclick: () => openOnTab('quest', q.id) }, 'Open'),
+      q.gives ? h('button', { type: 'button', class: 'quiet danger', onclick: () => setQuestNpc(q.id, { gives: false }) }, 'Stop giving') : null,
+      q.takes ? h('button', { type: 'button', class: 'quiet danger', onclick: () => setQuestNpc(q.id, { takes: false }) }, 'Stop taking') : null)))
+      : h('p', { class: 'empty' }, 'It gives no quest and takes none back.'));
+    out.push(h('div', { class: 'side-buttons' }, h('button', { type: 'button', onclick: attachQuest }, 'Attach a quest...'), h('button', { type: 'button', onclick: newQuestFor }, 'A new quest for it...')));
+    return out;
+  }
+  /** Makes NPC rec.id give (start) and/or take back (end) quest `qid`, or lets go of it (false): saved as a draft of the quest. */
+  async function setQuestNpc(qid, { gives, takes }) {
+    const npc = rec.id;
+    if ((gives === false || takes === false) && !confirm(`Quest ${qid} will have no NPC ${gives === false ? 'giving it' : 'to hand it in to'}. Go on?`)) return;
+    try {
+      const q = await api(`/c/quest/${qid}`), tree = q.tree;
+      tree.Check = isObj(tree.Check) ? tree.Check : {};
+      for (const end of ['0', '1']) if (!isObj(tree.Check[end])) tree.Check[end] = {};
+      if (gives !== undefined) tree.Check[0].npc = gives ? npc : 0;
+      if (takes !== undefined) tree.Check[1].npc = takes ? npc : 0;
+      await api(`/c/quest/${qid}`, { method: 'PUT', body: { tree, words: q.words, layout: q.layout } });
+      savedElsewhere('quest', qid);
+      toast(`Quest ${qid} is saved as your draft with that change: publish it on the Quests tab for players to get it.`);
+      loadNpcQuests();
+    } catch (e) { toast(e.message, true); }
+  }
+  async function attachQuest() {
+    const r = await pickFromList('Which quest?', async (q) => (await api(`/c/quest?q=${encodeURIComponent(q)}`)).map((x) => ({ id: x.id, label: x.name || '(no name)' })), 'number or name');
+    if (!r) return;
+    const gives = h('input', { type: 'checkbox', checked: true }), takes = h('input', { type: 'checkbox', checked: true });
+    const ok = await dialog(`Quest ${r.id}: ${r.label}`, (close) => h('form', { class: 'form', onsubmit: (e) => { e.preventDefault(); close(gives.checked || takes.checked ? { gives: gives.checked || undefined, takes: takes.checked || undefined } : null); } },
+      h('label', { class: 'check' }, gives, `${rec.words?.name || `NPC ${rec.id}`} gives it (players start it here)`),
+      h('label', { class: 'check' }, takes, 'It is handed in to them (players finish it here)'),
+      h('div', { class: 'dialog-foot' }, h('button', { type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'primary', type: 'submit' }, 'Attach it'))));
+    if (ok) setQuestNpc(r.id, ok);
+  }
+  async function newQuestFor() {
+    const npc = rec.id, id = h('input', { type: 'number', min: 1, max: 99999, required: true }), name = h('input', { type: 'text', value: 'A new quest', maxLength: 100 }), note = h('p', { class: 'error', role: 'alert' });
+    const made = await dialog('A new quest for it', (close) => h('form', { class: 'form', onsubmit: async (e) => {
+      e.preventDefault();
+      const n = Number(id.value);
+      try {
+        const s2 = await api(`/c/quest/${n}/state`);
+        if (s2.assets || s2.draft || s2.live) { note.textContent = `Quest ${n} is there already. Take a free number, or attach that one.`; return; }
+        close(n);
+      } catch (err) { note.textContent = err.message; }
+    } }, h('label', null, 'Its number', id), h('label', null, 'Its name', name), h('p', { class: 'muted' }, 'Up to five digits, one the game doesn’t use. It starts and ends with this NPC; the rest of it is made on the Quests tab.'), note,
+    h('div', { class: 'dialog-foot' }, h('button', { type: 'button', onclick: () => close(null) }, 'Cancel'), h('button', { class: 'primary', type: 'submit' }, 'Make it'))));
+    if (!made) return;
+    const tree = EMPTY_QUEST();
+    tree.QuestInfo.name = name.value.trim() || 'A new quest';
+    tree.Check[0].npc = npc; tree.Check[1].npc = npc;
+    try {
+      await api(`/c/quest/${made}`, { method: 'PUT', body: { tree, words: {} } });
+      loadNpcQuests();
+      openOnTab('quest', made);
+    } catch (e) { toast(e.message, true); }
   }
 
   /** An NPC's dialogue: a graph that is its own (rec.dialogue), made into its script when published. */
@@ -904,5 +995,22 @@ export function thingsTab(host, kinds, blurb) {
     h('aside', { class: 'thing-side' }, pickKind, find, h('div', { class: 'side-buttons' }, h('button', { type: 'button', onclick: newOne }, 'New...'), h('button', { type: 'button', onclick: importZip, title: 'Open one someone exported, as your draft' }, 'Import zip...')), list),
     h('div', { class: 'thing-main' }, head, editor)));
   draw();
-  return { unsaved: () => changed, show() { lookup(find.value); } };
+  /** A record another tab asked to open (see openOnTab), when it is of a kind this tab works on. */
+  const take = () => {
+    if (!pending || !kinds.some((k) => k[0] === pending.kind)) return;
+    const { kind: k, id } = pending;
+    pending = null;
+    kind = k;
+    if (pickKind) for (const b of pickKind.children) { const on = b.textContent === kinds.find((x) => x[0] === k)?.[1]; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }
+    open(k, id);
+  };
+  window.addEventListener('voyage-open', take);
+  window.addEventListener('voyage-saved', async (e) => {
+    const { kind: k, id } = e.detail;
+    if (rec?.kind !== k || rec.id !== id) return;
+    if (changed) { toast(`${NAMES[k]} ${id} was changed and saved on another tab. Save yours and that change is lost; throw yours away to get it.`, true); return; }
+    try { show(await api(`/c/${k}/${id}`)); draw(); lookup(find.value); } catch (err) { toast(err.message, true); }
+  });
+  take();
+  return { unsaved: () => changed, show() { lookup(find.value); take(); if (rec?.kind === 'npc' && board) loadNpcQuests(); } };
 }

@@ -480,6 +480,36 @@ Object.assign(CustomStore.prototype, {
   },
 });
 
+// ---------------------------------------------------------------- the quests an NPC gives or takes back
+Object.assign(CustomStore.prototype, {
+  /** A big file of the assets (or the customs folder's own), read once and again only when it changes. */
+  bigJson(rel) {
+    const file = this.baseFile(rel), at = stamp(file);
+    this.big ??= new Map();
+    const kept = this.big.get(rel);
+    if (kept?.file === file && kept.at === at) return kept.tree;
+    const tree = readJson(file) || {};
+    this.big.set(rel, { file, at, tree });
+    return tree;
+  },
+  /**
+   * The quests NPC `npc` gives (Check 0 names it) or takes back (Check 1): the game's, and your own drafts and
+   * published ones in place of theirs. [{ id, name, gives, takes, draft, live }]
+   */
+  npcQuests(npc) {
+    if (!Number.isInteger(npc) || npc < 1 || npc > 9999999) throw bad('That is not an NPC’s number.');
+    const check = this.bigJson('Quest/Check.img'), info = this.bigJson('Quest/QuestInfo.img'), own = this.own('quest'), out = [];
+    const ids = new Set([...Object.keys(check).filter((k) => /^\d+$/.test(k)).map(Number), ...own.keys()]);
+    for (const id of ids) {
+      const o = own.get(id), rec = o ? readJson(o.draft ? this.draftFile('quest', id) : this.liveFile('quest', id)) : null;
+      const c = rec?.tree?.Check || check[id], gives = Number(c?.[0]?.npc) === npc, takes = Number(c?.[1]?.npc) === npc;
+      if (!gives && !takes) continue;
+      out.push({ id, name: String((rec?.tree?.QuestInfo || info[id])?.name ?? ''), gives, takes, draft: !!o?.draft, live: !!o?.live });
+    }
+    return out.sort((a, b) => a.id - b.id);
+  },
+});
+
 // ---------------------------------------------------------------- monsters and NPCs made as files of the customs folder
 const LIFE = { npc: 'Npc', mob: 'Mob' };
 /** A monster's file or one of its pictures, as a map's zip brings them: Mob/<7 digits>.img.json, Mob/<7 digits>.img/.../x.png. */
@@ -593,6 +623,7 @@ export function customRoutes(api, guard, store) {
   api.get('/pictures/:kind', guard, wrap((req, res) => res.json(store.pictures(req.params.kind))));
   api.put('/pictures/:kind/:name', guard, express.raw({ type: 'image/png', limit: '12mb' }), wrap((req, res) => { res.json(store.addPicture(req.params.kind, req.params.name, req.body)); console.log(`picture ${req.params.name} brought in for ${KINDS[req.params.kind].dir}`); }));
   api.delete('/pictures/:kind/:name', guard, wrap((req, res) => { store.removePicture(req.params.kind, req.params.name); res.json({ ok: true }); }));
+  api.get('/npc-quests/:id', guard, wrap((req, res) => { if (!/^\d{1,7}$/.test(req.params.id)) throw bad('That is not a number.'); res.json(store.npcQuests(Number(req.params.id))); }));
   // monsters and NPCs made as files of the customs folder: what a map's zip takes and brings
   api.get('/life/:kind/:id', guard, wrap((req, res) => { if (!/^\d{1,7}$/.test(req.params.id)) throw bad('That is not a number.'); res.json(store.life(req.params.kind, Number(req.params.id))); }));
   api.put(/^\/customs\/(Mob\/.+)$/, guard, express.raw({ type: () => true, limit: '20mb' }), wrap((req, res) => { store.putMobFile(req.params[0], req.body); res.json({ ok: true }); }));

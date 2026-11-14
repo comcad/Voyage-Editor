@@ -356,3 +356,4 @@ pre.script { max-height: 60vh; overflow: auto; font: 12px/1.45 var(--mono); back
 .wearer { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--grid); }
 .wearer > span:first-child { margin-right: auto; }
 .thing-inspect h4 { margin: 4px 0 0; font-size: 13px; }
+.quest-rows { max-height: 360px; overflow: auto; }

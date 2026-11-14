@@ -1,0 +1,11 @@
+# What the editor makes and keeps on this machine
+node_modules/
+public/Editor.js
+# your drafts, what you published and your pictures (the customs folder is written from them)
+/data/
+# local settings: server.js makes conf/editor.conf from the tracked conf/editor.conf.dist
+conf/*.conf
+# This machine's settings for docker compose (where the assets are)
+.env
+**/*.log
+.DS_Store

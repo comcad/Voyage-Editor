@@ -1,0 +1,57 @@
+####################################
+# Voyage Editor configuration file #
+####################################
+#
+# server.js reads conf/editor.conf (TOML), creating it from this file on first start, then every
+# other conf/*.conf in the same folder. Each key may be defined in only one file. editor.conf is
+# gitignored: change your settings there, not in this template. Restart the editor after a change.
+# `node server.js --conf <dir>` reads another folder instead.
+[voyage]
+###################################################################################################
+# EDITOR
+#
+#     Editor.Host
+#        Description: The address the editor listens on.
+#        Default:     "0.0.0.0"
+
+Editor.Host = "0.0.0.0"
+
+#
+#     Editor.Port
+#        Description: The editor's port: open http://<this machine>:<port> in a browser.
+#        Default:     3001
+
+Editor.Port = 3001
+
+#
+#     Editor.Password
+#        Description: The password to sign in with. Anyone who can reach the port and knows it can
+#                     change what players get, so make it long, and keep the port off the internet
+#                     (the sign-in is not encrypted unless you put the editor behind HTTPS).
+#        Default:     "" - no password: the editor then answers only the machine it runs on (from
+#                     elsewhere, reach it through an SSH tunnel).
+
+Editor.Password = ""
+
+#
+#     Editor.AssetsDir
+#        Description: The assets folder the Voyage extractor made, relative to the folder server.js
+#                     is in. Voyage-Client and Voyage-Server point at the same one. The editor
+#                     reads it to draw with and never changes it: what you publish is written into
+#                     its customs folder (assets/customs, laid out like the assets), whose files
+#                     the client and the server read in place of the ones of the same name.
+#        Default:     "../voyage-assets"
+
+Editor.AssetsDir = "../voyage-assets"
+
+#
+#     Editor.DataDir
+#        Description: Where the editor keeps your drafts, what you have published (to write the
+#                     customs folder from) and the pictures you brought in, relative to the folder
+#                     server.js is in.
+#        Default:     "data"
+
+Editor.DataDir = "data"
+
+#
+###################################################################################################

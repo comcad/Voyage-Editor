@@ -1,0 +1,9 @@
+# Don't ship these into the build context (they're mounted at runtime or not needed)
+.git/
+node_modules/
+public/Editor.js
+data/
+conf/*.conf
+.env
+*.log
+.DS_Store

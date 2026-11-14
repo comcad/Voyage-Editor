@@ -1,0 +1,18 @@
+{
+  "name": "voyage-editor",
+  "version": "0.1.0",
+  "description": "Map, item, NPC and quest editor for Voyage: publishes into the shared assets' customs folder",
+  "type": "module",
+  "allowScripts": {
+    "esbuild": true
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.12",
+    "express": "^4.21.0",
+    "smol-toml": "^1.9.1"
+  }
+}

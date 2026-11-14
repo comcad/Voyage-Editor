@@ -1,0 +1,19 @@
+# Voyage-Editor. Run from the repo root:  docker compose up --build -d
+services:
+  editor:
+    build: .
+    image: voyage-editor:latest
+    container_name: voyage-editor
+    # uid 1000, so what it writes (settings, drafts, the customs folder) is yours, not root's
+    user: "1000:1000"
+    # host networking: it binds Editor.Port directly
+    network_mode: host
+    volumes:
+      # The assets folder the extractor made, shared with Voyage-Client and Voyage-Server. The editor only reads it,
+      # except its customs folder, where publishing writes (so it is mounted writable).
+      - ${VOYAGE_ASSETS:-../voyage-assets}:/voyage-assets
+      # Settings: conf/editor.conf, made from conf/editor.conf.dist on the first start. Restart after a change.
+      - ./conf:/conf
+      # Your drafts, what you published and the pictures you brought in.
+      - ./data:/app/data
+    restart: unless-stopped

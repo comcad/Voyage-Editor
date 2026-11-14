@@ -102,12 +102,14 @@ The WZ extractor lives in its own repo: **[Voyage-Wz-Extractor](https://github.c
 > Use your own Voyage-Client v83 GMS asset files.
 
 ```sh
+cd ..                                # beside Voyage-Editor, not inside it
 git clone https://github.com/comcad/Voyage-Wz-Extractor
 cd Voyage-Wz-Extractor
 node wz-extract.mjs <path-to-wz-folder> ../voyage-assets
+cd ../Voyage-Editor
 ```
 
-The assets folder is shared: Voyage-Editor, Voyage-Client and Voyage-Server all point at the same one (here `../voyage-assets`, beside the repos; `Editor.AssetsDir` in `conf/editor.conf`). If you already run the client, use its assets folder.
+The assets folder is shared: Voyage-Editor, Voyage-Client and Voyage-Server all point at the same one (here `voyage-assets`, beside the repos; `Editor.AssetsDir` in `conf/editor.conf`). If you already run the client, use its assets folder.
 
 ### 3. Run it
 

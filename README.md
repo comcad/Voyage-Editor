@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://github.com/user-attachments/assets/f3327f7f-5a19-403d-b881-d540287cdf14" width="120" height="120" alt="Voyage MapleStory map editor logo" />
+<img src="https://github.com/user-attachments/assets/f3327f7f-5a19-403d-b881-d540287cdf14" width="120" height="120" alt="Voyage Editor logo" />
 
-# Voyage Editor: Voyage-Client Map Editor
+# Voyage Editor: Version 83 Map Editor
 
-**An open-source Voyage-Client v83 (GMS) map, item, NPC and quest editor that runs in your browser.**
+**An open-source version 83 map, item, NPC and quest editor that runs in your browser.**
 Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 
 <br />
@@ -18,19 +18,19 @@ Pure JavaScript · Part of Voyage, with Voyage-Client and Voyage-Server
 [![Last commit](https://img.shields.io/github/last-commit/comcad/Voyage-Editor?style=flat-square)](https://github.com/comcad/Voyage-Editor/commits/main)
 
 </div>
-<img width="2872" height="1448" alt="image" src="https://github.com/user-attachments/assets/312d9637-7013-4e0e-bcae-717a81a58c8d" />
+<img width="2872" height="1448" alt="Screenshot of the Voyage Editor map editor" src="https://github.com/user-attachments/assets/312d9637-7013-4e0e-bcae-717a81a58c8d" />
 
 
 <br />
 
-**Voyage Editor** is an open-source **Voyage-Client map editor** for **v83 (GMS)**, with editors for items, equips, NPCs and quests beside it. It opens in a web browser, draws maps with [Voyage-Client](https://github.com/comcad/Voyage-Client)'s own renderer, and publishes what you make into the shared assets folder's `customs` folder, where Voyage-Client and [Voyage-Server](https://github.com/comcad/Voyage-Server) read it. It works like a patch system: the assets stay as the extractor made them, and `customs` holds the files that stand in for theirs.
+**Voyage Editor** is an open-source **version 83 map editor**, with editors for items, equips, NPCs and quests beside it. It opens in a web browser, draws maps with [Voyage-Client](https://github.com/comcad/Voyage-Client)'s own renderer, and publishes what you make into the shared assets folder's `customs` folder, where Voyage-Client and [Voyage-Server](https://github.com/comcad/Voyage-Server) read it. It works like a patch system: the assets stay as the extractor made them, and `customs` holds the files that stand in for theirs.
 
 The repository contains the editor page, the small Node.js server that serves it and writes the `customs` folder, and a Dockerfile for running it.
 
 
 ## 🧭 The Voyage Projects
 
-Voyage is four projects that work together, all reading one assets folder made from your own game files:
+Voyage is made up of four projects that work together, all reading one assets folder made from your own game files:
 
 | Project | What it does |
 |---|---|
@@ -46,11 +46,11 @@ voyage-assets/                 # made by the extractor from your own .wz files
 Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-assets
 ```
 
-## ✨ Features of the MapleStory Editor
+## ✨ Features
 
 | | Area | What's included |
 |---|---|---|
-| 🗺️ | **Maps** | Open any map of the game's and see it as players do: backgrounds, tiles, objects, NPCs, monsters and portals, drawn by the game's own renderer |
+| 🗺️ | **Maps** | Open any of the game's maps and see it as players do: backgrounds, tiles, objects, NPCs, monsters and portals, drawn by the game's own renderer |
 | 🧱 | **Map making** | Start a map of your own, empty or as a copy of another; its name and street name, and every setting of its `info` |
 | 👾 | **Life** | Add, move and remove NPCs and monsters, picked by name or number |
 | 🚪 | **Portals** | Add and move portals and wire them to another map's portal, with every portal type explained |
@@ -63,7 +63,7 @@ Voyage-Client/  Voyage-Server/  Voyage-Editor/    # each pointed at ../voyage-as
 | 📜 | **Quests** | A quest's text, the NPC that gives it and the one that takes it back, what it needs, what it gives, what is said |
 | 🖼️ | **Import** | Pictures of your own (PNG) for all of the above; the ones for maps become the `custom` object and background sets |
 
-## 🧩 How the Voyage-Client Editor Works in a Browser
+## 🧩 How It Works in a Browser
 
 ```
 ┌──────────────────┐     HTTP      ┌──────────────────┐   reads    ┌─────────────────────────┐
@@ -81,11 +81,11 @@ The browser draws maps with the client's renderer from the assets `server.js` se
 
 ## 📋 Requirements
 
-- A folder of Voyage-Client v83 GMS extracted asset files (your own), extracted with the [Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)
+- A folder of version 83 `*.wz` files (your own), extracted with the [Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)
 - [Voyage-Client](https://github.com/comcad/Voyage-Client) and [Voyage-Server](https://github.com/comcad/Voyage-Server) pointed at the same assets folder, to play what you make
 - **Either** Node.js ≥ 18 **or** Docker
 
-## 🚀 Quick Start: Run the MapleStory Editor
+## 🚀 Quick Start: Run the Editor
 
 ### 1. Clone the repo
 
@@ -99,7 +99,7 @@ cd Voyage-Editor
 The WZ extractor lives in its own repo: **[Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor)** (pure Node, zero dependencies).
 
 > [!NOTE]
-> Use your own Voyage-Client v83 GMS asset files.
+> Use your own version 83 `.wz` files.
 
 ```sh
 cd ..                                # beside Voyage-Editor, not inside it
@@ -233,11 +233,11 @@ Voyage-Editor/
 ## ❓ FAQ
 
 <details>
-<summary><b>What is a Voyage-Client map editor?</b></summary>
+<summary><b>What is a map editor?</b></summary>
 
 <br />
 
-A tool for changing the maps of a Voyage-Client server, or making new ones: where the ground is, where monsters spawn, which NPCs stand where, where portals lead. Voyage Editor is one for v83 that runs in a web browser and draws each map with the game client's own renderer, so a map looks in the editor the way players see it.
+A tool for changing a game server's maps, or making new ones: where the ground is, where monsters spawn, which NPCs stand where and where portals lead. Voyage Editor is one for version 83 that runs in a web browser and draws each map with the game client's own renderer, so a map looks the same in the editor as it does to players.
 
 </details>
 
@@ -273,7 +273,7 @@ The files it writes are the game's own JSON, laid out as the assets are, so any 
 
 <br />
 
-In `data/` (`Editor.DataDir`): a folder for each kind (`maps/`, `npcs/`, `equips/`, `items/`, `quests/`), with what you published in `published/` and the pictures you brought in in `pictures/`. Keep it with the editor: it is what the `customs` folder is written from.
+In `data/` (`Editor.DataDir`): a folder for each kind (`maps/`, `npcs/`, `equips/`, `items/`, `quests/`), with what you published in `published/` and the pictures you imported in `pictures/`. Keep it with the editor: it is what the `customs` folder is written from.
 
 </details>
 
@@ -295,42 +295,28 @@ Questions, feedback, or want to help test? Come hang out on Discord.
 
 ## ⚠️ Disclaimer
 
-**Voyage Editor is an unofficial, fan-made, non-commercial project. It is not affiliated with, endorsed by, sponsored by, or connected to Nexon Korea Corporation, Nexon America Inc., or any of their subsidiaries or affiliates ("Nexon").**
-
-### Trademarks & Copyright
-MapleStory, its name, logos, characters, artwork, music, sound effects, text, game data, and all related assets are the property of Nexon and its licensors. All trademarks and copyrights belong to their respective owners. The name "MapleStory" is used in this repository for identification and compatibility description only and does not imply any association with Nexon.
-
 ### No Game Assets Included
-This repository contains **no** copyrighted Nexon assets. That includes `.wz` files, extracted images, audio, maps, and any other game data. It contains only original source code written by the contributors.
+This repository contains **no** copyrighted game assets: no `.wz` files, extracted images, audio, maps or any other game data. It contains only source code.
 
-To use this software, you must supply your own legally obtained copy of the game files. You are solely responsible for ensuring you have the legal right to possess and use them. The contributors do not provide, host, link to, or distribute these files and will not assist in obtaining them.
-
-### No Nexon Code
-This is an independent implementation. It does not contain and was not derived from Nexon's proprietary client source code or binaries. It reads only the game files you extract yourself, for interoperability purposes.
+To use this software, you must supply your own legally obtained copy of the game files. You are solely responsible for making sure you have the legal right to possess and use them. The contributors do not provide, host, link to or distribute these files, and will not help anyone obtain them.
 
 ### Intended Use
-This software is provided for educational, research, and interoperability purposes, and for use with self-hosted servers on a private, non-commercial basis. It is not intended to circumvent any technological protection measure, to replace or compete with any official Nexon product or service, or to be used for commercial gain.
+This software is provided for educational, research and interoperability purposes, and for use with self-hosted servers on a private, non-commercial basis. It is not intended to circumvent any technological protection measure, to replace or compete with any official product or service, or to be used for commercial gain.
 
-The contributors do not sell this software, charge for access, or accept payment for in-game items or advantages. Anyone who does so with this software acts on their own account and at their own risk.
-
-### Official Servers
-Use of this software with Nexon's official servers is **not supported** and may violate Nexon's Terms of Service, potentially resulting in account action. Do not use it for that purpose.
+The contributors do not sell this software, charge for access or accept payment for in-game items or advantages. Anyone who does so with this software acts on their own account and at their own risk.
 
 ### License Scope
-The MIT license in this repository applies **only** to the original source code written by the contributors. It grants no rights to any Nexon trademarks, assets, or other intellectual property.
+The MIT license in this repository applies **only** to the source code written by the contributors. It grants no rights to any third party's trademarks, assets or other intellectual property.
 
 ### No Warranty
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR CONTRIBUTORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM THE USE OF THIS SOFTWARE.
 
 ### Your Responsibility
-You are responsible for complying with all applicable laws and with any license or terms of service that apply to the game files and servers you use.
-
-### Takedown Requests
-If you are a rights holder and believe this repository infringes your rights, please contact **[xcomcadx@gmail.com]** or open an issue. Your request will be reviewed and addressed promptly.
+You are responsible for complying with all applicable laws, and with any license or terms of service that apply to the game files and servers you use.
 
 
 <div align="right">
 
-[⬆ Back to top](#voyage-editor-Voyage-Client-map-editor)
+[⬆ Back to top](#voyage-editor-version-83-map-editor)
 
 </div>

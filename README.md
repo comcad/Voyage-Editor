@@ -35,7 +35,7 @@ Voyage is four projects that work together, all reading one assets folder made f
 | Project | What it does |
 |---|---|
 | [Voyage-Client](https://github.com/comcad/Voyage-Client) | The web client: serves the game to browsers and relays them to the game server |
-| [Voyage-Server](https://github.com/comcad/Voyage-Server) | The game server: a fork of [Cosmic](https://github.com/P0nk/Cosmic) that reads the same assets, with an admin page |
+| [Voyage-Server](https://github.com/comcad/Voyage-Server) | The game server: reads the same assets, with an admin page |
 | **Voyage-Editor** (this one) | The map, item, NPC and quest editor: publishes what you make into the assets' `customs` folder |
 | [Voyage-Wz-Extractor](https://github.com/comcad/Voyage-Wz-Extractor) | Turns your own `.wz` files into the assets folder the other three read |
 
@@ -262,7 +262,7 @@ No. The assets folder is only ever read; everything goes into `customs`. Delete 
 
 <br />
 
-The files it writes are the game's own JSON, laid out as the assets are, so any server that reads Voyage's assets folder can use them. A server that reads XML `wz` folders (such as plain Cosmic) can't read them as they are.
+The files it writes are the game's own JSON, laid out as the assets are, so any server that reads Voyage's assets folder can use them. A server that reads XML `wz` folders can't read them as they are.
 
 </details>
 
@@ -284,7 +284,7 @@ Questions, feedback, or want to help test? Come hang out on Discord.
 ## 🙏 Credits
 
 - **Renderer:** [Voyage-Client](https://github.com/comcad/Voyage-Client), whose map renderer draws every map here (the editor began as the client's admin page)
-- **Server:** [Voyage-Server](https://github.com/comcad/Voyage-Server), a fork of [Cosmic](https://github.com/P0nk/Cosmic)
+- **Server:** [Voyage-Server](https://github.com/comcad/Voyage-Server)
 
 ## 📄 License
 

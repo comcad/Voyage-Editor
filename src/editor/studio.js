@@ -190,6 +190,7 @@ export function studio(o) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.imageSmoothingEnabled = view.k < 1;   // (zoomed out, a big picture is shown smoothly)
+    ctx.imageSmoothingQuality = 'high';
     ctx.strokeStyle = 'rgba(128,128,128,0.45)'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, fy + 0.5); ctx.lineTo(W, fy + 0.5); ctx.stroke();
     zoomLabel.textContent = k < 1 ? `${Math.round(k * 100)}%` : `${k}×`;
@@ -430,17 +431,22 @@ export function studio(o) {
     return Math.max(0.01, Math.min(8, Math.round(cur * (by > 0 ? 1.25 : 0.8) * 1000) / 1000));
   }
   let sizing = null;
+  const unreadable = new Map();   // pictures that couldn't be read (node -> its picture), left out of sizing all of it
   /** Gives the picked picture (or, with "all of it", every picture of the record) size `k`: shown at once; `done`: one to keep. */
   async function setSize(k, done) {
     if (!sizeAll) { await edit((x) => { x.e.scale = k; }, done); return; }
-    const nodes = o.allPictures();
+    // (a picture that can't be read, missing from your pictures, is left as it is rather than holding up the rest)
+    const all = o.allPictures(), nodes = all.filter((n) => unreadable.get(n) !== n._canvas);
     if (nodes.length > 1 && !sizing) hint.textContent = `Reading its ${nodes.length} pictures...`;
-    const eds = await (sizing ??= Promise.all(nodes.map((n) => o.editFor(n))).finally(() => { sizing = null; }));
+    const got = await (sizing ??= Promise.allSettled(nodes.map((n) => o.editFor(n).catch((e) => { unreadable.set(n, n._canvas); throw e; }))).finally(() => { sizing = null; }));
+    const eds = got.filter((r) => r.status === 'fulfilled').map((r) => r.value);
     for (const x of eds) { x.e.scale = k; remake(x); }
     applyLive();
     numbers?.();
-    if (done) o.touch();
-    if (hint.textContent.startsWith('Reading its')) hint.textContent = '';
+    if (done && eds.length) o.touch();
+    const left = all.length - eds.length;
+    if (left) hint.textContent = left === 1 ? 'One of its pictures couldn’t be read (was it taken out of your pictures?) and wasn’t sized.' : `${left} of its pictures couldn’t be read (were they taken out of your pictures?) and weren’t sized.`;
+    else if (hint.textContent.startsWith('Reading its') || hint.textContent.includes('couldn’t be read')) hint.textContent = '';
   }
   /** Changes the picked part's edit (made when it is first changed) and shows it; `done`: one to keep. */
   async function edit(fn, done, then = null) {

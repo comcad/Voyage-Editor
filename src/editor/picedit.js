@@ -7,8 +7,10 @@
  * like now is made from those, so turning it again starts from the picture as it was rather than from a turned copy
  * that has lost its corners. It is sized and turned about the point it is joined by (a weapon about the hand, a cap
  * about the brow), or about its own point when it has none (an NPC or a monster about its feet), so that point stays
- * where it is: a monster made bigger grows up from the ground. Pixels are moved
- * whole (no smoothing), as the game's pictures are drawn.
+ * where it is: a monster made bigger grows up from the ground. Made bigger or turned, pixels are moved whole (no
+ * smoothing), as the game's pictures are drawn. Made smaller, a picture is averaged down: every pixel of it counts
+ * towards the one it becomes, so a big drawing shrinks to a small one without going blocky or grainy, and turning it
+ * after keeps it smooth.
  *
  * Nothing here is sent anywhere: the page shows an edit as it goes, and Save turns it into a picture of yours.
  */
@@ -59,15 +61,11 @@ export function made(pixels, base, e) {
   const dx = e.dx || 0, dy = e.dy || 0, moved = (v) => v && [v[0] + dx, v[1] + dy];
   if (!turns(e)) return { canvas: pixels, w, h, origin: [Math.round(o[0]) - dx, Math.round(o[1]) - dy], map: map && structuredClone(map), box: base.box && { lt: moved(base.box.lt), rb: moved(base.box.rb) }, head: moved(base.head) };
   let k = Math.min(8, Math.max(0.01, Number(e.scale) || 1));
-  // made smaller, a picture is shrunk smoothly first (every pixel counts towards the one it becomes), then turned; made
-  // bigger, its pixels grow as blocks, as the game's own pictures do
+  // made smaller, a picture is averaged down first, then turned (smoothly); made bigger, its pixels grow as blocks, as
+  // the game's own pictures do
   if (k < 1) {
     const tw = Math.max(1, Math.round(w * k)), th = Math.max(1, Math.round(h * k)), sx = tw / w, sy = th / h;
-    const small = document.createElement('canvas');
-    small.width = tw; small.height = th;
-    const sc = small.getContext('2d');
-    sc.imageSmoothingEnabled = true; sc.imageSmoothingQuality = 'high';
-    sc.drawImage(pixels, 0, 0, tw, th);
+    const small = shrink(pixels, tw, th);
     const at2 = (v) => v && [v[0] * sx, v[1] * sy];
     const smallBase = { origin: [o[0] * sx, o[1] * sy], map: map && Object.fromEntries(Object.entries(map).map(([key, v]) => [key, at2(v)])),
       box: base.box && { lt: at2(base.box.lt), rb: at2(base.box.rb) }, head: at2(base.head) };
@@ -84,11 +82,26 @@ export function made(pixels, base, e) {
   const x0 = Math.floor(Math.min(...xs) + 1e-6), y0 = Math.floor(Math.min(...ys) + 1e-6);
   const W = Math.max(1, Math.ceil(Math.max(...xs) - 1e-6) - x0), H = Math.max(1, Math.ceil(Math.max(...ys) - 1e-6) - y0);
   const src = pixels.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data, out = new ImageData(W, H), d = out.data;
+  const smooth = !!e._shrunk;   // (a picture averaged down is turned smoothly too: whole pixels would make its edges jagged)
   for (let j = 0; j < H; j++) {
     for (let i = 0; i < W; i++) {
-      const [sx, sy] = back(x0 + i + 0.5, y0 + j + 0.5), ix = Math.floor(sx), iy = Math.floor(sy);
+      const [sx, sy] = back(x0 + i + 0.5, y0 + j + 0.5), t = (j * W + i) * 4;
+      if (smooth) {
+        // the four pixels nearest, each by how near it is (and how solid, so see-through ones don't darken the edge)
+        const gx = sx - 0.5, gy = sy - 0.5, ax = Math.floor(gx), ay = Math.floor(gy), tx = gx - ax, ty = gy - ay;
+        let r = 0, g = 0, b = 0, a = 0;
+        for (let n = 0; n < 4; n++) {
+          const px = ax + (n & 1), py = ay + (n >> 1);
+          if (px < 0 || py < 0 || px >= w || py >= h) continue;
+          const s = (py * w + px) * 4, A = src[s + 3] * ((n & 1) ? tx : 1 - tx) * ((n >> 1) ? ty : 1 - ty);
+          r += src[s] * A; g += src[s + 1] * A; b += src[s + 2] * A; a += A;
+        }
+        if (a > 0) { d[t] = r / a; d[t + 1] = g / a; d[t + 2] = b / a; d[t + 3] = a; }
+        continue;
+      }
+      const ix = Math.floor(sx), iy = Math.floor(sy);
       if (ix < 0 || iy < 0 || ix >= w || iy >= h) continue;
-      const s = (iy * w + ix) * 4, t = (j * W + i) * 4;
+      const s = (iy * w + ix) * 4;
       d[t] = src[s]; d[t + 1] = src[s + 1]; d[t + 2] = src[s + 2]; d[t + 3] = src[s + 3];
     }
   }
@@ -109,6 +122,55 @@ export function made(pixels, base, e) {
   if (base.head) { const P = at(o[0] + base.head[0], o[1] + base.head[1]); head = [P[0] - O[0] + dx, P[1] - O[1] + dy]; }
   return { canvas, w: W, h: H, origin: [O[0] - dx, O[1] - dy], map: m2, box, head };
 }
+/**
+ * A picture (a canvas) made smaller, tw by th, by averaging: each pixel it becomes is the mix of every pixel that falls
+ * on it, by how much of each does and how solid each is (so see-through pixels don't darken the edges). The browser's
+ * own drawing looks at only a few of them, which leaves a big picture made much smaller blocky and grainy.
+ */
+export function shrink(pixels, tw, th) {
+  const w = pixels.width, h = pixels.height, rx = w / tw, ry = h / th;
+  const src = pixels.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
+  // for each column (row) of the smaller picture, the columns (rows) of the picture that fall on it: [at, how much, ...]
+  const spans = (n, r, max) => Array.from({ length: n }, (_, i) => {
+    const from = i * r, to = Math.min(max, from + r), out = [];
+    for (let x = Math.floor(from); x < to; x++) { const c = Math.min(x + 1, to) - Math.max(x, from); if (c > 1e-9) out.push(x, c); }
+    return out;
+  });
+  const cols = spans(tw, rx, w), rows = spans(th, ry, h);
+  // across first (tw by h), each colour already weighted by how solid it is; then down
+  const mid = new Float32Array(tw * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let i = 0; i < tw; i++) {
+      const sp = cols[i];
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let n = 0; n < sp.length; n += 2) {
+        const s = (y * w + sp[n]) * 4, A = src[s + 3] * sp[n + 1];
+        r += src[s] * A; g += src[s + 1] * A; b += src[s + 2] * A; a += A;
+      }
+      const t = (y * tw + i) * 4;
+      mid[t] = r; mid[t + 1] = g; mid[t + 2] = b; mid[t + 3] = a;
+    }
+  }
+  const out = new ImageData(tw, th), d = out.data, area = rx * ry;
+  for (let j = 0; j < th; j++) {
+    const sp = rows[j];
+    for (let i = 0; i < tw; i++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let n = 0; n < sp.length; n += 2) {
+        const s = (sp[n] * tw + i) * 4, c = sp[n + 1];
+        r += mid[s] * c; g += mid[s + 1] * c; b += mid[s + 2] * c; a += mid[s + 3] * c;
+      }
+      if (a <= 0) continue;
+      const t = (j * tw + i) * 4;
+      d[t] = r / a; d[t + 1] = g / a; d[t + 2] = b / a; d[t + 3] = a / area;
+    }
+  }
+  const c = document.createElement('canvas');
+  c.width = tw; c.height = th;
+  c.getContext('2d').putImageData(out, 0, 0);
+  return c;
+}
+
 /** A canvas as a PNG. */
 export const pngOf = (canvas) => new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('The picture could not be made.'))), 'image/png'));
 

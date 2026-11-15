@@ -3,7 +3,8 @@
  * does to it. Nothing here draws or touches the page.
  *
  * What a map holds, by where it is in the tree:
- *   life/<n>                        an NPC ("n") or a monster's spawn ("m"), standing on foothold fh at (x, cy)
+ *   life/<n>                        an NPC ("n") or a monster's spawn ("m"), standing on foothold fh at (x, cy) and
+ *                                   drawn in that foothold's layer
  *   portal/<n>                      a portal: its name pn, its type pt, where it leads (map tm, portal tn)
  *   foothold/<layer>/<group>/<id>   a piece of ground from (x1, y1) to (x2, y2), chained to prev and next by id
  *   ladderRope/<n>                  a ladder (l = 1) or a rope at x from y1 down to y2
@@ -70,7 +71,7 @@ export const HINTS = {
   rx0: 'How far left it may walk.', rx1: 'How far right it may walk.', f: '1: turned to face the other way.', mobTime: 'Seconds before a monster comes back (0: the server’s usual; -1: never).', hide: '1: not shown.',
   pn: 'The portal’s name: what other maps lead to (tn).', pt: 'The kind of portal.', tm: `The map it leads to (${NO_MAP}: nowhere).`, tn: 'The name of the portal it leads to on that map.', script: 'The script the server runs for it.',
   x1: 'Where it starts.', x2: 'Where it ends.', prev: 'The foothold before it (0: none).', next: 'The foothold after it (0: none).',
-  l: '1: a ladder. 0: a rope.', uf: '1: you can climb off the top.', page: 'The layer it belongs to.', y1: 'Its top.', y2: 'Its bottom.',
+  l: '1: a ladder. 0: a rope.', uf: '1: you can climb off the top.', page: 'The layer whoever climbs it is drawn in.', y1: 'Its top.', y2: 'Its bottom.',
   z: 'Its order among the layer’s objects.', zM: 'Its order among pieces that overlap.', u: 'The kind of piece.', no: 'Which piece of that kind.',
   bS: 'The background set.', rx: 'How it moves with the view, across.', ry: 'How it moves with the view, up and down.', cx: 'How far apart copies are, across (0: its own width).', cy_back: '', a: 'How solid it is (255: fully).',
   front: '1: in front of everything.', ani: '1: animated (from the set’s ani).', returnMap: 'Where you go when you die or use a return scroll.', forcedReturn: `Where you are put when you log in here (${NO_MAP}: here).`,
@@ -114,14 +115,56 @@ export class MapDoc {
     for (const [layer, groups] of entries(this.tree.foothold)) for (const [group, list] of entries(groups)) for (const [id, n] of entries(list)) out.push({ id: Number(id), layer, group, n, path: ['foothold', layer, group, id] });
     return out;
   }
-  /** The ground under (x, y): the highest foothold at or below it (a few pixels of give), as { id, y }; null over nothing. */
-  groundBelow(x, y) {
+  /**
+   * The ground under (x, y): the highest foothold at or below it (a few pixels of give), as { id, y, layer }; null over
+   * nothing. Where ground of two layers is at the same height, the one in `layer`.
+   */
+  groundBelow(x, y, layer = -1) {
     let best = null;
     for (const f of this.footholds()) {
       const { x1, y1, x2, y2 } = f.n;
       if (x1 === x2 || x < Math.min(x1, x2) || x > Math.max(x1, x2)) continue;
+      const fy = y1 + ((y2 - y1) * (x - x1)) / (x2 - x1), r = Math.round(fy), l = Number(f.layer);
+      if (fy >= y - 12 && (!best || r < best.y || (r === best.y && l === layer && best.layer !== layer))) best = { id: f.id, y: r, layer: l };
+    }
+    return best;
+  }
+  /** The floor of `layer` over or under x nearest the height y, as { id, y }; null where that layer has none there. */
+  groundOnLayer(x, y, layer) {
+    let best = null;
+    for (const f of this.footholds()) {
+      const { x1, y1, x2, y2 } = f.n;
+      if (Number(f.layer) !== layer || !(x1 < x2) || x < x1 || x > x2) continue;
+      const fy = Math.round(y1 + ((y2 - y1) * (x - x1)) / (x2 - x1));
+      if (!best || Math.abs(fy - y) < Math.abs(best.y - y)) best = { id: f.id, y: fy };
+    }
+    return best;
+  }
+  /**
+   * The layer the game draws an NPC or a monster in: the layer of the ground it stands on (its foothold, else the floor
+   * just under it); -1 when it stands on none (the game then draws it over every layer).
+   */
+  lifeLayer(n) {
+    const all = this.footholds(), own = all.find((f) => f.id === Number(n.fh));
+    if (own) return Number(own.layer);
+    const x = Number(n.x) || 0, y = (Number(n.cy ?? n.y) || 0) - 5;
+    let best = null;
+    for (const f of all) {
+      const { x1, y1, x2, y2 } = f.n;
+      if (!(x1 < x2) || x < x1 || x > x2) continue;
       const fy = y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
-      if (fy >= y - 12 && (!best || fy < best.y)) best = { id: f.id, y: Math.round(fy), layer: Number(f.layer) };
+      if (fy >= y - 1 && fy - y <= 60 && (!best || fy < best.y)) best = { y: fy, layer: Number(f.layer) };
+    }
+    return best ? best.layer : -1;
+  }
+  /** The layer the game draws a reactor in: that of the floor whose middle is nearest it; 7, over every layer, with none. */
+  reactorLayer(x, y) {
+    let best = 7, bd = Infinity;
+    for (const f of this.footholds()) {
+      const { x1, y1, x2, y2 } = f.n;
+      if (!(x1 < x2) || x1 + 8 > x2) continue;
+      const d = Math.hypot((x1 + x2) / 2 - x, (y1 + y2) / 2 - y);
+      if (d < bd) { bd = d; best = Number(f.layer); }
     }
     return best;
   }
@@ -174,12 +217,51 @@ export class MapDoc {
       if (Number.isFinite(n.rx1)) n.rx1 += dx;
     } else { n.x = (Number(n.x) || 0) + dx; n.y = (Number(n.y) || 0) + dy; }
   }
-  /** Stands an NPC or a monster on the ground under it (its foothold and height). */
+  /** Stands an NPC or a monster on the ground under it (its foothold and height), keeping to its layer if it can. */
   settle(n) {
-    const g = this.groundBelow(n.x, Number(n.cy ?? n.y) || 0);
+    const g = this.groundBelow(n.x, Number(n.cy ?? n.y) || 0, this.lifeLayer(n));
     if (!g) { n.fh = 0; return false; }
     n.cy = g.y; n.y = g.y; n.fh = g.id;
     return true;
+  }
+  /**
+   * Puts an NPC or a monster in another layer: onto that layer's floor where it stands (the one nearest its height);
+   * false where that layer has no floor there.
+   */
+  standOnLayer(n, layer) {
+    const g = this.groundOnLayer(Number(n.x) || 0, Number(n.cy ?? n.y) || 0, layer);
+    if (!g) return false;
+    n.cy = g.y; n.y = g.y; n.fh = g.id;
+    return true;
+  }
+  /**
+   * Moves an object or a tile into another layer; returns its new path. Null for a tile when that layer has tiles from
+   * another set (a layer's tiles all come from one).
+   */
+  toLayer(it, layer) {
+    const [from, kind, key] = it.path, to = String(layer), t = this.tree;
+    if (from === to) return it.path;
+    if (kind === 'tile') {
+      const tS = t[from]?.info?.tS;
+      if (entries(t[to]?.tile).length && t[to]?.info?.tS !== tS) return null;
+      ((t[to] ??= {}).info ??= {}).tS = tS;
+    }
+    const src = t[from][kind];
+    delete src[key];
+    if (Array.isArray(src._order)) src._order = src._order.filter((k) => String(k) !== key);
+    return this.add([to, kind], it.n);
+  }
+  /** Moves the run a foothold is in (its group) into another layer, whole; returns the foothold's new path. */
+  runToLayer(it, layer) {
+    const [, from, group, id] = it.path, to = String(layer), all = this.tree.foothold;
+    if (from === to) return it.path;
+    const groups = all[from], dst = (all[to] ??= {});
+    // (it keeps its number where that is free: the number also orders who stands on it against who stands on other runs)
+    const g = dst[group] === undefined ? group : nextKey(dst) === '0' ? '1' : nextKey(dst);
+    dst[g] = groups[group];
+    delete groups[group];
+    if (Array.isArray(groups._order)) groups._order = groups._order.filter((k) => String(k) !== group);
+    return ['foothold', to, g, id];
   }
   remove(it) {
     const parent = this.at(it.path.slice(0, -1)), key = it.path[it.path.length - 1];

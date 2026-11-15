@@ -389,6 +389,51 @@ export function mapsTab(host) {
     if (!it) return;
     for (const el of side.querySelectorAll('input[data-field]')) { const v = it.n[el.dataset.field]; if (v !== undefined && document.activeElement !== el) el.value = v; }
   }
+  /**
+   * The layer it is drawn in, to change: an object's or a tile's own; a foothold's is its whole run's (and so that of
+   * all who stand on it); an NPC's or a monster's is its ground's, so another layer stands it on that layer's floor
+   * where it is. Null for the rest (a rope's is its own Layer box; a reactor's, a portal's and a background's are told).
+   */
+  function layerRow(it) {
+    const n = it.n, ALL = [0, 1, 2, 3, 4, 5, 6, 7], plural = (k, one, many = `${one}s`) => `${k} ${k === 1 ? one : many}`;
+    const row = (cur, opts, pick, hint) => [
+      h('label', { class: 'field', title: hint }, h('span', null, 'Layer'), h('select', { 'aria-label': 'Layer', onchange: (e) => pick(Number(e.target.value)) },
+        opts.map(([l, text, off]) => h('option', { value: l, selected: l === cur, disabled: !!off }, text)))),
+      h('p', { class: 'muted small' }, hint)];
+    // (with one layer shown in the bar, it goes along: what was just moved stays clear and can be picked)
+    const follow = (l) => { if (view.layer >= 0) { view.layer = l; parts.layer.value = String(l); } };
+    if (it.kind === 'obj' || it.kind === 'tile') {
+      const t = doc.tree, tS = t[it.layer]?.info?.tS;
+      const other = (l) => it.kind === 'tile' && l !== it.layer && Object.keys(t[l]?.tile || {}).some((k) => !k.startsWith('_')) && t[l]?.info?.tS !== tS;
+      return row(it.layer, ALL.map((l) => [l, other(l) ? `${l}  (its tiles are from ${t[l].info?.tS || 'another set'})` : String(l), other(l)]), (l) => {
+        doc.mark();
+        const path = doc.toLayer(it, l);
+        if (!path) { doc.unmark(); toast(`Layer ${l}’s tiles are from another set: a layer’s tiles all come from one.`, true); inspect(it); return; }
+        follow(l); view.changed(path);
+      }, `A higher layer is drawn over a lower one. NPCs and monsters are drawn in the layer of the ground they stand on, over its tiles and objects.${it.kind === 'tile' ? ' A layer’s tiles all come from one set.' : ''}`);
+    }
+    if (it.kind === 'foothold') {
+      const [, layer, group] = it.path, run = Object.keys(doc.tree.foothold[layer][group]).filter((k) => !k.startsWith('_')).map(Number), ids = new Set(run);
+      const on = Object.entries(doc.tree.life || {}).filter(([k, v]) => !k.startsWith('_') && v && typeof v === 'object' && ids.has(Number(v.fh))).length;
+      return row(Number(layer), ALL.map((l) => [l, String(l)]), (l) => { doc.mark(); view.changed(doc.runToLayer(it, l)); },
+        `Moves its whole run (${plural(run.length, 'piece')}). Players, NPCs and monsters standing on it are drawn in its layer${on ? `: ${plural(on, 'NPC or monster', 'NPCs and monsters')} on this map stand${on === 1 ? 's' : ''} on it` : ''}.`);
+    }
+    if (it.kind === 'life') {
+      const cur = doc.lifeLayer(n), x = Number(n.x) || 0, cy = Number(n.cy ?? n.y) || 0;
+      const opts = ALL.map((l) => {
+        if (l === cur) return [l, String(l)];
+        const g = doc.groundOnLayer(x, cy, l), dy = g ? g.y - cy : 0;
+        return [l, !g ? `${l}  (no ground here)` : Math.abs(dy) > 2 ? `${l}  (its ground here is ${Math.abs(dy)} px ${dy > 0 ? 'lower' : 'higher'})` : String(l), !g];
+      });
+      if (cur < 0) opts.unshift([-1, 'none: over every layer (it stands on no ground)', true]);
+      return row(cur, opts, (l) => {
+        doc.mark();
+        if (!doc.standOnLayer(n, l)) { doc.unmark(); toast(`Layer ${l} has no ground where it stands.`, true); inspect(it); return; }
+        view.changed(it.path);
+      }, `The game draws ${n.type === 'm' ? 'a monster' : 'an NPC'} in the layer of the ground it stands on: over that layer’s tiles and objects, under the layers above. Picking a layer stands it on that layer’s ground here; one with no ground here can’t be picked (pick the ground and change its layer, or draw ground on that layer).${n.type === 'm' ? ' A monster that walks onto other ground is drawn in that ground’s layer.' : ''}`);
+    }
+    return null;
+  }
   function inspect(it) {
     if (!doc) return;
     if (!it) {
@@ -405,7 +450,9 @@ export function mapsTab(host) {
       return;
     }
     const n = it.n, title = it.kind === 'life' ? `${n.type === 'm' ? 'Monster' : 'NPC'} ${n.id}${lifeName(n) ? `: ${lifeName(n)}` : ''}` : it.kind === 'foothold' ? `Foothold ${it.path[3]}` : `${KINDS[it.kind]} ${it.path[it.path.length - 1]}`;
-    const where = it.kind === 'foothold' ? `Layer ${it.path[1]}, run ${it.path[2]}. Drag an end to reshape it; what joins it comes along.` : it.layer !== undefined ? `On layer ${it.layer}.` : it.kind === 'life' ? 'Dragged, it drops onto the ground under it (hold Shift to leave it in the air).' : '';
+    const where = it.kind === 'foothold' ? `Run ${it.path[2]}. Drag an end to reshape it; what joins it comes along.` : it.kind === 'life' ? 'Dragged, it drops onto the ground under it (hold Shift to leave it in the air).'
+      : it.kind === 'reactor' ? `Drawn in layer ${doc.reactorLayer(it.x, it.y)}, the layer of the ground nearest it: move it to change that.` : it.kind === 'portal' ? 'Portals are drawn over every layer.'
+      : it.kind === 'back' ? 'Drawn behind every layer, or over all of them with “In front of everything” ticked.' : '';
     const extra = [];
     if (it.kind === 'portal') extra.push(h('button', { type: 'button', class: 'primary', onclick: () => wire(it) }, 'Lead to a map...'),
       n.tm !== NO_MAP && n.tm !== undefined ? h('button', { type: 'button', onclick: () => openMap(n.tm) }, `Open map ${n.tm}`) : null);
@@ -415,6 +462,7 @@ export function mapsTab(host) {
     fill(side,
       h('h3', null, title), where ? h('p', { class: 'muted' }, where) : null,
       extra.length ? h('div', { class: 'side-buttons' }, extra) : null,
+      layerRow(it),
       seat || fields(n, it.kind, it.path),
       h('div', { class: 'side-buttons' },
         it.kind === 'foothold' ? null : h('button', { type: 'button', onclick: () => view.duplicate() }, 'Copy'),

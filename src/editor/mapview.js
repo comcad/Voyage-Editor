@@ -281,12 +281,19 @@ export class MapView {
     if (map) {
       try {
         if (this.show.backs) map.drawBacks(ctx, cam, false);
-        if (this.show.scenery) for (let l = 0; l < 8; l++) { ctx.globalAlpha = this.layer >= 0 && l !== this.layer ? 0.3 : 1; map.drawLayer(ctx, cam, l); }
-        ctx.globalAlpha = 1;
-        if (this.show.reactors) for (const it of this.items) if (it.kind === 'reactor') this.art(ctx, cam, it);
-        if (this.show.life) for (const e of map.life) {
-          e.draw(ctx, cam, this.assets);
+        // layer by layer, as the game draws them: its tiles and objects, then the monsters, reactors and NPCs in it
+        // (each in the layer of its ground; on a layer, who stands on a lower-numbered run in front); a flying
+        // monster goes over every layer
+        const byRun = (a, b) => (b.fh?.zMass || 0) - (a.fh?.zMass || 0), layerOf = (e) => e.fh?.layer ?? 7;
+        const mobs = this.show.life ? map.life.filter((e) => e.kind !== 'Npc').sort(byRun) : [], npcs = this.show.life ? map.life.filter((e) => e.kind === 'Npc').sort(byRun) : [];
+        const reactors = this.show.reactors ? this.items.filter((it) => it.kind === 'reactor').map((it) => [it, this.doc.reactorLayer(it.x, it.y)]) : [];
+        for (let l = 0; l < 8; l++) {
+          if (this.show.scenery) { ctx.globalAlpha = this.layer >= 0 && l !== this.layer ? 0.3 : 1; map.drawLayer(ctx, cam, l); ctx.globalAlpha = 1; }
+          for (const e of mobs) if (!e.flying && layerOf(e) === l) e.draw(ctx, cam, this.assets);
+          for (const [it, rl] of reactors) if (rl === l) this.art(ctx, cam, it);
+          for (const e of npcs) if (layerOf(e) === l) e.draw(ctx, cam, this.assets);
         }
+        for (const e of mobs) if (e.flying) e.draw(ctx, cam, this.assets);
         if (this.show.scenery) map.drawPortals(ctx, cam);
         if (this.show.backs) map.drawBacks(ctx, cam, true);
       } catch (e) { for (let i = 0; i < 16; i++) ctx.restore(); ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0); this.busy = `This map can’t be drawn: ${e.message}`; }

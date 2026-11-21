@@ -5,7 +5,7 @@
  *
  * The nodes: start (where talking begins), say (a line: Next when something follows, OK when nothing does), ask
  * (Yes / No), choice (a list to pick from, one way out for each), check (a test: yes or no), act (gives, takes or
- * moves, then goes on) and end. Checks and acts run as they are reached; the next say, ask or choice is shown.
+ * moves, then goes on; opening the NPC's shop ends the talk) and end. Checks and acts run as they are reached; the next say, ask or choice is shown.
  */
 
 /** What a check can test, and what an act can do, each with the values it takes. */
@@ -27,6 +27,7 @@ export const ACTS = {
   warp: { label: 'Send to a map', id: 'Map', portal: 'Portal (optional)' },
   startQuest: { label: 'Start a quest', id: 'Quest' },
   completeQuest: { label: 'Finish a quest', id: 'Quest' },
+  shop: { label: 'Open its shop (the talk ends)' },
 };
 /** Each kind of node's ways out (choice has one for each of its options: o0, o1...). */
 export const OUTS = { start: ['next'], say: ['next'], ask: ['yes', 'no'], check: ['yes', 'no'], act: ['next'], end: [] };
@@ -91,6 +92,7 @@ function go(id) {
         var n = id == null ? null : nodes[id];
         if (!n || n.t == 'end') { cm.dispose(); return; }
         if (n.t == 'check') { id = test(n) ? n.yes : n.no; continue; }
+        if (n.t == 'act' && n.what == 'shop') { cm.openAdminShop(); cm.dispose(); return; }
         if (n.t == 'act') { act(n); id = n.next; continue; }
         at = id;
         if (n.t == 'say') { if (n.next != null) cm.sendNext(n.text); else cm.sendOk(n.text); }

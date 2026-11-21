@@ -2,7 +2,7 @@
  * An item, equip, NPC, monster or quest as a zip, to keep or to pass on:
  *
  *   thing.json                  what it is (its kind and number), its words, its tree, where its nodes sit, and an
- *                               NPC's dialogue, a monster's drops
+ *                               NPC's dialogue and shop, a monster's drops
  *   pictures/<folder>/<name>.png the pictures of yours it uses (from the Import tab: equips, items, npcs, mobs or maps)
  *
  * Importing one saves it as your draft of a number you pick and brings its pictures in: one with the name of a
@@ -37,7 +37,7 @@ export async function exportThing(rec) {
     const bytes = await bytesOf(pictureUrl(DIR_KIND[m[1]], m[2]));
     if (bytes) files.push([`pictures/${m[1]}/${m[2]}.png`, bytes]); else missing.push(`the picture ${m[2]}`);
   }
-  const thing = { format: FORMAT, version: VERSION, kind: rec.kind, id: rec.id, words: rec.words, folder: rec.folder, tree: rec.tree, layout: rec.layout || null, dialogue: rec.dialogue || null, drops: Array.isArray(rec.drops) ? rec.drops : null };
+  const thing = { format: FORMAT, version: VERSION, kind: rec.kind, id: rec.id, words: rec.words, folder: rec.folder, tree: rec.tree, layout: rec.layout || null, dialogue: rec.dialogue || null, drops: Array.isArray(rec.drops) ? rec.drops : null, shop: rec.shop && typeof rec.shop === 'object' ? rec.shop : null };
   files.unshift(['thing.json', new TextEncoder().encode(JSON.stringify(thing, null, 1))]);
   const label = fileWord(rec.words?.name || rec.tree?.QuestInfo?.name);
   download(await makeZip(files), `${rec.kind}-${rec.id}${label ? `-${label}` : ''}.zip`);
@@ -58,7 +58,7 @@ export async function readThingZip(file) {
   const pictures = new Map(), pic = /^pictures\/(maps|npcs|equips|items|mobs)\/([A-Za-z0-9][A-Za-z0-9_-]{0,39})\.png$/;
   for (const [n, bytes] of files) { if (!n.startsWith(base)) continue; const m = pic.exec(n.slice(base.length)); if (m) pictures.set(`${m[1]}/${m[2]}`, bytes); }
   const plain = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
-  return { kind: t.kind, id: Number.isInteger(t.id) ? t.id : null, words: plain(t.words) || {}, folder: typeof t.folder === 'string' ? t.folder : undefined, tree: t.tree, layout: plain(t.layout), dialogue: plain(t.dialogue), drops: Array.isArray(t.drops) ? t.drops : null, pictures };
+  return { kind: t.kind, id: Number.isInteger(t.id) ? t.id : null, words: plain(t.words) || {}, folder: typeof t.folder === 'string' ? t.folder : undefined, tree: t.tree, layout: plain(t.layout), dialogue: plain(t.dialogue), drops: Array.isArray(t.drops) ? t.drops : null, shop: plain(t.shop) || null, pictures };
 }
 
 /** Saves a read zip as your draft of number `id`, its pictures brought in first. Resolves notes worth telling. */
@@ -72,7 +72,7 @@ export async function importThing(z, id) {
     if (as !== name) { renamed.set(key, as); notes.push(`the picture ${name} is called ${as} here, as a different ${name} was here already`); }
   }
   for (const c of canvases(tree)) { const m = PIC.exec(c._canvas); if (m && renamed.has(`${m[1]}/${m[2]}`)) c._canvas = `_custom/${m[1]}/${renamed.get(`${m[1]}/${m[2]}`)}.png`; }
-  await api(`/c/${z.kind}/${id}`, { method: 'PUT', body: { tree, words: z.words, folder: z.folder, layout: z.layout, dialogue: z.dialogue, drops: z.drops } });
+  await api(`/c/${z.kind}/${id}`, { method: 'PUT', body: { tree, words: z.words, folder: z.folder, layout: z.layout, dialogue: z.dialogue, drops: z.drops, shop: z.shop } });
   if (z.kind === 'quest') notes.push('the NPCs, items and monsters it names are the ones with those numbers here');
   if (z.kind === 'mob' && z.drops?.length) notes.push('the items it drops are the ones with those numbers here');
   return notes;

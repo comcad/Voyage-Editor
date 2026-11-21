@@ -252,6 +252,7 @@ export function thingsTab(host, kinds, blurb) {
     rec.layout = isObj(rec.layout) ? rec.layout : {};
     if (rec.kind === 'npc') rec.dialogue = isObj(rec.dialogue) && Array.isArray(rec.dialogue.nodes) ? rec.dialogue : { nodes: [{ id: 'start', type: 'start', x: 0, y: 0, data: {} }], wires: [] };
     if (rec.kind === 'mob') rec.drops = Array.isArray(rec.drops) ? rec.drops : null;
+    if (rec.kind === 'npc') { const s = rec.shop; rec.shop = isObj(s) ? { sells: Array.isArray(s.sells) ? s.sells : [], buys: Array.isArray(s.buys) ? s.buys : [], wish: !!s.wish, closed: !!s.closed } : null; }
     preview = rec.kind === 'equip' ? wornPreview() : rec.kind === 'npc' || rec.kind === 'mob' ? npcPreview(FAMILY[rec.kind]) : null;
     npcQuests = null;
     if (rec.kind === 'npc') loadNpcQuests();
@@ -284,7 +285,7 @@ export function thingsTab(host, kinds, blurb) {
     return { ...rec, tree };
   }
   const touch = () => { if (!changed) { changed = true; drawHead(); } soon(); };
-  const body = () => ({ tree: rec.tree, words: rec.words, folder: rec.folder, layout: rec.layout, dialogue: rec.dialogue, drops: rec.kind === 'mob' ? rec.drops : undefined });
+  const body = () => ({ tree: rec.tree, words: rec.words, folder: rec.folder, layout: rec.layout, dialogue: rec.dialogue, drops: rec.kind === 'mob' ? rec.drops : undefined, shop: rec.kind === 'npc' ? rec.shop : undefined });
 
   // ---------------------------------------------------------------- saving, publishing, zips
   async function save() { if (!(await flush())) return; try { rec.state = await api(`/c/${rec.kind}/${rec.id}`, { method: 'PUT', body: body() }); changed = false; drawHead(); lookup(find.value); toast('Saved as a draft.'); } catch (e) { toast(e.message, true); } }
@@ -296,7 +297,7 @@ export function thingsTab(host, kinds, blurb) {
     if (!(await flush())) return;
     try {
       rec.state = await api(`/c/${rec.kind}/${rec.id}/publish`, { method: 'POST', body: body() }); changed = false; drawHead(); lookup(find.value);
-      restartNotice(`${NAMES[rec.kind]} ${rec.id} is published to the customs folder${rec.kind === 'npc' && compileDialogue(rec.dialogue, rec.id).script ? ', with its dialogue as its script (customs/scripts/npc)' : ''}.`);
+      restartNotice(`${NAMES[rec.kind]} ${rec.id} is published to the customs folder${rec.kind === 'npc' && compileDialogue(rec.dialogue, rec.id).script ? ', with its dialogue as its script (customs/scripts/npc)' : ''}${rec.kind === 'npc' && rec.shop ? '. Its shop is read by the game server at once, without a restart' : ''}.`);
     } catch (e) { toast(e.message, true); }
   }
   async function discard() {
@@ -410,7 +411,7 @@ export function thingsTab(host, kinds, blurb) {
         if (source) {
           const src2 = await api(`/c/${k}/${source.id}`);
           if (k === 'equip' && Math.floor(n / 10000) !== Math.floor(source.id / 10000)) { note.textContent = `Its number has to start with ${Math.floor(source.id / 10000)}, as the one it copies does.`; return; }
-          close({ id: n, kind: k, tree: src2.tree, words: { ...src2.words }, folder: src2.folder, layout: src2.layout, dialogue: src2.dialogue, drops: src2.drops ?? (k === 'mob' ? [] : undefined), state: fresh });
+          close({ id: n, kind: k, tree: src2.tree, words: { ...src2.words }, folder: src2.folder, layout: src2.layout, dialogue: src2.dialogue, drops: src2.drops ?? (k === 'mob' ? [] : undefined), shop: k === 'npc' ? src2.shop ?? null : undefined, state: fresh });
         } else if (empty) close({ id: n, kind: k, tree: EMPTY_QUEST(), words: {}, state: fresh });
         else if (k === 'mob') close({ id: n, kind: k, tree: mobFromPicture(picture), words: { name: picture.name }, drops: [], state: fresh });
         else close({ id: n, kind: k, tree: { info: {}, stand: { 0: { ...canvasOf('npc', picture, [Math.round(picture.w / 2), picture.h]), z: 0, delay: 200 } } }, words: { name: picture.name, func: '' }, state: fresh });
@@ -906,7 +907,14 @@ export function thingsTab(host, kinds, blurb) {
     const t = rec.tree;
     t.info ??= {};
     const types = {
-      npc: { label: 'NPC', color: '#2a78d6', outs: () => [{ name: 'info', label: 'settings', kind: 'info' }, { name: 'quests', label: 'quests', kind: 'quests' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
+      npc: { label: 'NPC', color: '#2a78d6', outs: () => [{ name: 'info', label: 'settings', kind: 'info' }, { name: 'quests', label: 'quests', kind: 'quests' }, { name: 'shop', label: 'shop', kind: 'shop' }, { name: 'poses', label: 'poses', kind: 'pose' }], body: () => h('span', null, rec.words?.name || '(no name)') },
+      shop: { label: 'Shop', color: '#16a34a', ins: [{ name: 'in', accepts: ['shop'] }], body: () => {
+        const s = rec.shop;
+        if (!s) return h('span', { class: 'muted' }, 'has no shop');
+        const all = [...s.sells, ...s.buys];
+        return [h('span', { class: 'muted' }, `${s.closed ? 'closed for now; ' : ''}sells ${s.sells.length}, buys ${s.buys.length}`),
+          h('div', { class: 'nb-chips' }, all.slice(0, 6).map((e) => h('span', { class: 'nb-chip' }, `${e.item} ${names.get(`item:${e.item}`) || ''}`.trim().slice(0, 28))), all.length > 6 ? h('span', { class: 'muted' }, `+${all.length - 6}`) : null)];
+      } },
       quests: { label: 'Quests', color: '#d97706', ins: [{ name: 'in', accepts: ['quests'] }], body: () => {
         if (!npcQuests) return h('span', { class: 'muted' }, 'reading...');
         if (!npcQuests.length) return h('span', { class: 'muted' }, 'gives none, takes none back');
@@ -918,8 +926,8 @@ export function thingsTab(host, kinds, blurb) {
         body: (n) => { const to = linkOf(t, n.data.pose); return to ? h('span', { class: 'muted' }, `the same as ${to}`) : thumbs(t, n.data.pose, 'npc', 5); } },
     };
     const build = () => {
-      const nodes = [{ id: 'npc', type: 'npc', title: String(rec.id) }, { id: 'info', type: 'info' }, { id: 'quests', type: 'quests' }],
-        wires = [{ from: ['npc', 'info'], to: ['info', 'in'], fixed: true }, { from: ['npc', 'quests'], to: ['quests', 'in'], fixed: true }];
+      const nodes = [{ id: 'npc', type: 'npc', title: String(rec.id) }, { id: 'info', type: 'info' }, { id: 'quests', type: 'quests' }, { id: 'shop', type: 'shop' }],
+        wires = [{ from: ['npc', 'info'], to: ['info', 'in'], fixed: true }, { from: ['npc', 'quests'], to: ['quests', 'in'], fixed: true }, { from: ['npc', 'shop'], to: ['shop', 'in'], fixed: true }];
       for (const p of posesOf(t)) { nodes.push({ id: `pose:${p}`, type: 'pose', title: p, data: { pose: p } }); wires.push({ from: ['npc', 'poses'], to: [`pose:${p}`, 'in'], fixed: true }); }
       for (const p of posesOf(t)) { const to = linkOf(t, p); if (to && t[to]) wires.push({ from: [`pose:${to}`, 'frames'], to: [`pose:${p}`, 'same'] }); }
       return { nodes, wires };
@@ -945,9 +953,10 @@ export function thingsTab(host, kinds, blurb) {
         return `pose:${p}`;
       },
       inspect(id) {
-        if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node. Put it on a map in the map editor.')];
+        if (!id || id === 'npc') return [h('h3', null, 'NPC'), preview?.el, animateButton(null, 'Animate it'), wordsPanel(), h('p', { class: 'muted' }, 'What it says when talked to is on its Dialogue board; the quests it gives are on its Quests node, and what it sells and buys on its Shop node. Put it on a map in the map editor.')];
         if (id === 'info') return [h('h3', null, 'Settings'), fields(t.info, MORE.npc)];
         if (id === 'quests') return questsInspector();
+        if (id === 'shop') return shopInspector();
         return poseFrames(t, id.slice(5), 'npc', 'An NPC stands on its point: the middle of the picture’s bottom edge for one you bring in.');
       },
     };
@@ -1042,6 +1051,47 @@ export function thingsTab(host, kinds, blurb) {
       h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (!rec.drops.length || confirm('Its drops of its own go: it drops what the game server has for it again. Go on?')) { rec.drops = null; touch(); showBoard(); side(); } } }, 'Back to the server’s own')));
     return out;
   }
+  /**
+   * An NPC's shop: what players buy from it and what it takes from them, each for mesos (published into the customs
+   * folder; talked to, the NPC opens it, unless it has a dialogue of its own, which opens it with an Open its shop step).
+   */
+  function shopInspector() {
+    const out = [h('h3', null, 'Shop')], redo = () => { touch(); showBoard(); side(); };
+    if (!rec.shop) {
+      return [...out, h('p', null, 'It has no shop.'),
+        h('button', { type: 'button', class: 'primary', onclick: () => { rec.shop = { sells: [], buys: [], wish: false, closed: false }; redo(); } }, 'Give it a shop'),
+        h('p', { class: 'muted' }, 'A shop lists items players buy from it and items it buys from them, each for mesos. Published, talking to it opens the shop; if it has a dialogue of its own, the dialogue runs instead and an Open its shop step opens it.')];
+    }
+    const s = rec.shop;
+    const mesos = (v, lo) => Math.max(lo, Math.min(2147483647, Math.round(Number(v) || 0)));
+    const card = (list, e, i, sells) => h('div', { class: 'frame-card drop-card' },
+      pickRow('Item', e, 'item', 'item'),
+      h('label', { class: 'field', title: sells ? 'What a player pays for one.' : 'What it pays a player for one.' }, h('span', null, sells ? 'Price (mesos)' : 'It pays (mesos)'),
+        h('input', { type: 'number', min: sells ? 1 : 0, value: e.price, onchange: (ev) => { e.price = mesos(ev.target.value, sells ? 1 : 0); ev.target.value = e.price; touch(); } })),
+      sells ? h('label', { class: 'field', title: 'The most a player buys at once, for items that stack (others are one at a time).' }, h('span', null, 'At most at once'),
+        h('input', { type: 'number', min: 1, max: 32767, value: e.max, onchange: (ev) => { e.max = Math.max(1, Math.min(32767, Math.round(Number(ev.target.value) || 1))); ev.target.value = e.max; touch(); } })) : null,
+      h('label', { class: 'check', title: 'Players see it greyed and can’t trade it.' }, h('input', { type: 'checkbox', checked: !!e.off, onchange: (ev) => { e.off = ev.target.checked; touch(); } }), 'Not for now'),
+      h('div', { class: 'side-buttons' },
+        i > 0 ? h('button', { type: 'button', class: 'quiet', title: 'Show it a row higher', onclick: () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; redo(); } }, 'Up') : null,
+        h('button', { type: 'button', class: 'quiet danger', onclick: () => { list.splice(i, 1); redo(); } }, 'Take it off')));
+    const add = (list, sells) => async () => {
+      const r = await pickFromList('Which item?', async (q) => (await Promise.all(['item', 'equip'].map((k) => api(`/c/${k}?q=${encodeURIComponent(q)}`)))).flat().map((x) => ({ id: x.id, label: x.name || '(no name)' })));
+      if (!r) return;
+      names.set(`item:${r.id}`, r.label);
+      list.push(sells ? { item: r.id, price: 1, max: 100, off: false } : { item: r.id, price: 1, off: false });
+      redo();
+    };
+    out.push(h('p', { class: 'muted' }, 'Players buy what it sells on the shop’s Sell tab, and sell it what it buys on the Buy tab, from their own items. Published, the game server reads it at once.'),
+      h('h4', null, 'It sells'), ...s.sells.map((e, i) => card(s.sells, e, i, true)),
+      h('div', { class: 'side-buttons' }, h('button', { type: 'button', onclick: add(s.sells, true) }, 'Add an item it sells...')),
+      h('h4', null, 'It buys'), ...s.buys.map((e, i) => card(s.buys, e, i, false)),
+      h('div', { class: 'side-buttons' }, h('button', { type: 'button', onclick: add(s.buys, false) }, 'Add an item it buys...')),
+      h('h4', null, 'The shop'),
+      h('label', { class: 'check', title: 'Leaving, a player is asked what else they want and can pick an item; it is noted in the game server’s log.' }, h('input', { type: 'checkbox', checked: s.wish, onchange: (ev) => { s.wish = ev.target.checked; touch(); } }), 'Asks what else they want when they leave'),
+      h('label', { class: 'check', title: 'Talked to, it says it isn’t doing business at this time.' }, h('input', { type: 'checkbox', checked: s.closed, onchange: (ev) => { s.closed = ev.target.checked; touch(); showBoard(); } }), 'Closed for now'),
+      h('div', { class: 'side-buttons' }, h('button', { type: 'button', class: 'quiet danger', onclick: () => { if (!s.sells.length && !s.buys.length || confirm('Its shop goes, with everything in it. Go on?')) { rec.shop = null; redo(); } } }, 'Take its shop away')));
+    return out;
+  }
   /** A pose's frames (NPCs and monsters: one picture each), each with its delay. */
   function poseFrames(t, p, k, note) {
     const frames = t[p], to = linkOf(t, p);
@@ -1133,7 +1183,7 @@ export function thingsTab(host, kinds, blurb) {
       check: { label: 'Check', color: '#d97706', deletable: true, ins: flowIn, outs: () => [{ name: 'yes', label: 'yes', kind: 'flow' }, { name: 'no', label: 'no', kind: 'flow' }],
         body: (n) => h('span', null, CHECKS[n.data?.what] ? `${CHECKS[n.data.what].label} ${[n.data.id, n.data.n].filter((x) => x !== undefined && x !== '').join(' × ')}` : 'tests nothing yet') },
       act: { label: 'Action', color: '#db2777', deletable: true, ins: flowIn, outs: () => [{ name: 'next', label: 'then', kind: 'flow' }],
-        body: (n) => h('span', null, ACTS[n.data?.what] ? `${ACTS[n.data.what].label}: ${[n.data.id, n.data.n, n.data.portal].filter((x) => x !== undefined && x !== '' && x !== null).join(' ')}` : 'does nothing yet') },
+        body: (n) => { const a = ACTS[n.data?.what]; if (!a) return h('span', null, 'does nothing yet'); const v = [a.id && n.data.id, a.n && n.data.n, a.portal && n.data.portal].filter((x) => x !== undefined && x !== '' && x !== null && x !== false).join(' '); return h('span', null, v ? `${a.label}: ${v}` : a.label); } },
       end: { label: 'End', color: '#6b7280', deletable: true, ins: flowIn, body: () => h('span', { class: 'muted' }, 'the talk ends') },
     };
     const fresh = { say: { text: '' }, ask: { text: '' }, choice: { text: '', options: ['', ''] }, check: { what: 'level', n: 10 }, act: { what: 'item', id: 0, n: 1 }, end: {} };

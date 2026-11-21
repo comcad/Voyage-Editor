@@ -54,6 +54,23 @@ function cleanDrops(list) {
     return { item: int(d.item, 0, 9999999, 0), chance: int(d.chance, 1, 1000000, 1), min, max: Math.max(min, int(d.max, 1, 2147483647, min)), quest: int(d.quest, 0, 32767, 0) };
   });
 }
+/** Where published NPCs' shops are written in the customs folder, for Voyage-Server (talked to, an NPC with one opens it). */
+const SHOPS_FILE = 'server/admin-shops.json';
+/**
+ * An NPC's shop as sent, made safe; null: it has none. sells: what players buy from it, each { item, price (mesos),
+ * max (the most at once), off (shown greyed, not traded for now) }; buys: what it takes from players, each { item,
+ * price (what it pays), off }; wish: leaving, players are asked what else they want; closed: it isn't doing business.
+ */
+function cleanShop(shop) {
+  if (!shop || typeof shop !== 'object' || Array.isArray(shop)) return null;
+  const int = (v, lo, hi, d) => { const n = Math.trunc(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+  const list = (v) => (Array.isArray(v) ? v : []).filter((e) => e && typeof e === 'object' && int(e.item, 0, 9999999, 0) >= 1000000).slice(0, 200);
+  return {
+    sells: list(shop.sells).map((e) => ({ item: int(e.item, 1000000, 9999999, 0), price: int(e.price, 1, 2147483647, 1), max: int(e.max, 1, 32767, 100), off: !!e.off })),
+    buys: list(shop.buys).map((e) => ({ item: int(e.item, 1000000, 9999999, 0), price: int(e.price, 0, 2147483647, 0), off: !!e.off })),
+    wish: !!shop.wish, closed: !!shop.closed,
+  };
+}
 /** The files of Quest a quest is spread over; a quest's tree has a part of each name. */
 const QUEST_PARTS = ['QuestInfo', 'Check', 'Act', 'Say'];
 const LABEL = { map: 'A map', npc: 'An NPC', equip: 'An equip', item: 'An item', quest: 'A quest', mob: 'A monster' };
@@ -203,7 +220,7 @@ export class CustomStore {
     const state = this.state(k, id);
     for (const [from, file] of [['draft', this.draftFile(k, id)], ['live', this.liveFile(k, id)]]) {
       const rec = state[from] ? readJson(file) : null;
-      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, layout: rec.layout || null, dialogue: rec.dialogue || null, drops: k === 'mob' ? cleanDrops(rec.drops) : undefined, state, from, savedAt: rec.savedAt };
+      if (rec?.tree) return { id, kind: k, tree: rec.tree, words: this.cleanWords(k, rec.words), folder: rec.folder, layout: rec.layout || null, dialogue: rec.dialogue || null, drops: k === 'mob' ? cleanDrops(rec.drops) : undefined, shop: k === 'npc' ? cleanShop(rec.shop) : undefined, state, from, savedAt: rec.savedAt };
     }
     const own = this.fromAssets(k, id);
     if (!own) throw bad(`There is no ${k} ${id}.`, 404);
@@ -219,8 +236,8 @@ export class CustomStore {
     }
     const plain = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : undefined);
     const dialogue = k === 'npc' && plain(body.dialogue) && Array.isArray(body.dialogue.nodes) && Array.isArray(body.dialogue.wires) ? body.dialogue : undefined;
-    const drops = k === 'mob' ? cleanDrops(body.drops) : undefined;
-    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, layout: plain(body.layout), dialogue, drops, savedAt: Date.now() }));
+    const drops = k === 'mob' ? cleanDrops(body.drops) : undefined, shop = k === 'npc' ? cleanShop(body.shop) : undefined;
+    writeFile(this.draftFile(k, id), JSON.stringify({ id, kind: k, words: this.cleanWords(k, body.words), folder, tree: body.tree, layout: plain(body.layout), dialogue, drops, shop, savedAt: Date.now() }));
     return this.state(k, id);
   }
   discard(k, id) { this.checkId(k, id); fs.rmSync(this.draftFile(k, id), { force: true }); return this.state(k, id); }
@@ -260,6 +277,17 @@ export class CustomStore {
       if (list) drops[t.id] = Object.fromEntries(list.map((d, i) => [String(i), d]));
     }
     if (Object.keys(drops).length) want.set(DROPS_FILE, JSON.stringify(drops));
+    // published NPCs' shops, for the game server to open when one is talked to: what it sells at a price above 0,
+    // then what it buys at the price it pays below or at 0, as the game's shop lists them
+    const shops = {};
+    for (const t of pub.things) {
+      if (t.k !== 'npc') continue;
+      const s = cleanShop(readJson(t.file)?.shop);
+      if (!s) continue;
+      const items = [...s.sells.map((e) => ({ item: e.item, price: e.price, max: e.max, off: e.off ? 1 : 0 })), ...s.buys.map((e) => ({ item: e.item, price: -e.price, max: 1, off: e.off ? 1 : 0 }))];
+      shops[t.id] = { items: Object.fromEntries(items.map((e, i) => [String(i), e])), wish: s.wish ? 1 : 0, closed: s.closed ? 1 : 0 };
+    }
+    if (Object.keys(shops).length) want.set(SHOPS_FILE, JSON.stringify(shops));
     // a published NPC's dialogue, as the script the game server runs for it
     for (const t of pub.things) {
       if (t.k !== 'npc') continue;
